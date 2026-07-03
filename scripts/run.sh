@@ -27,9 +27,9 @@ set -a; [ -f "$HERE/.env" ] && . "$HERE/.env"; set +a
 : "${STUB_PORT:=8765}"
 : "${BRIDGE_PORT:=8088}"
 : "${ENFORCE_WEBUI:=1}"
-# Max seconds to wait for Nighty's stub control server to answer after launching
-# Wine before assuming the boot hung and retrying. Some Wine builds stall during
-# first-prefix init with no error, well before Nighty's own code ever runs.
+# Max seconds to wait for Nighty's stub control server to answer after
+# launching Wine before assuming the boot hung and retrying. Some Wine builds
+# can stall during first-prefix init well before Nighty's own code ever runs.
 : "${BOOT_TIMEOUT:=300}"
 mkdir -p "$NIGHTY_HOME"
 
@@ -135,7 +135,7 @@ run_stack() {
 
   # Virtual display. Xvfb refuses to auto-create /tmp/.X11-unix unless running
   # as root, so on a non-root install (or any host where /tmp is freshly
-  # mounted/cleared) it silently fails to bind its socket. Create the socket dir
+  # mounted/cleared) it silently fails to bind its socket. create the socket dir
   # ourselves rather than relying on Xvfb to do it.
   mkdir -p /tmp/.X11-unix
   chmod 1777 /tmp/.X11-unix 2>/dev/null || true
