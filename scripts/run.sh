@@ -30,8 +30,7 @@ set -a; [ -f "$HERE/.env" ] && . "$HERE/.env"; set +a
 # Max seconds to wait for Nighty's stub control server to answer after launching
 # Wine before assuming the boot hung and retrying. Some Wine builds stall during
 # first-prefix init with no error, well before Nighty's own code ever runs.
-# Generous by default so a slow Pi that simply boots slowly is never killed.
-: "${BOOT_TIMEOUT:=600}"
+: "${BOOT_TIMEOUT:=300}"
 mkdir -p "$NIGHTY_HOME"
 
 export WINEPREFIX
