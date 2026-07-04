@@ -15,7 +15,7 @@ token) for when the panel is not up yet.
 All hosts/ports/credentials come from the environment (see .env.example).
 Nothing is hardcoded; no secrets live in this file.
 """
-import os, json, ssl, time, base64, select, socket, threading, urllib.request, urllib.error, urllib.parse
+import os, json, ssl, time, base64, select, socket, urllib.request, urllib.error, urllib.parse
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 try:
@@ -169,7 +169,7 @@ def _write_app_id(app_id):
                 ap["id"] = app_id; changed = True
         if changed:
             tmp = cfg + ".tmp"
-            json.dump(d, open(tmp, "w", encoding="utf-8"), indent=4, ensure_ascii=False)
+            json.dump(d, open(tmp, "w", encoding="utf-8"), indent=4, ensure_ascii=True)
             os.replace(tmp, cfg)
     except Exception:
         pass
@@ -292,7 +292,7 @@ def _write_auth_license(key):
             d = {}
     d["license"] = key
     tmp = p + ".tmp"
-    json.dump(d, open(tmp, "w", encoding="utf-8"), indent=4, ensure_ascii=False)
+    json.dump(d, open(tmp, "w", encoding="utf-8"), indent=4, ensure_ascii=True)
     os.replace(tmp, p)
     return True
 
@@ -328,7 +328,7 @@ def _write_login(username, account_token, app_id, bot_token, make_active=True):
     d["logins"] = logins
     d["web"] = True
     tmp = cfg + ".tmp"
-    json.dump(d, open(tmp, "w", encoding="utf-8"), indent=4, ensure_ascii=False)
+    json.dump(d, open(tmp, "w", encoding="utf-8"), indent=4, ensure_ascii=True)
     os.replace(tmp, cfg)
     return True
 
@@ -339,6 +339,23 @@ def _restart_backend():
         os.system("pkill -f '[N]ighty_stub'")
     except Exception:
         pass
+
+
+def _boot_link_signals(seg):
+    """Classify one backend-log segment (the text after a 'CTL server up' marker)
+    into the raw bot-link signals shared by both the polled probe and the cached
+    status check, so the two can never drift apart:
+      on_ready_failed  - the companion bot's on_ready raised NotFound(10003) /
+                         'Unknown Channel' from application_commands (the bot is no
+                         longer authorized on the account).
+      gateway_rejected - the account gateway was rejected (HTTP 403).
+      positive         - the bot logged in AND synced its commands (healthy link).
+    """
+    on_ready_failed = ("Ignoring exception in on_ready" in seg and "application_commands" in seg
+                       and ("10003" in seg or "Unknown Channel" in seg or "NotFound" in seg))
+    gateway_rejected = "server rejected WebSocket connection: HTTP 403" in seg
+    positive = "Logged in as" in seg and "Commands synced" in seg
+    return on_ready_failed, gateway_rejected, positive
 
 
 def _boot_gen():
@@ -380,12 +397,10 @@ def _bot_link_probe(prev_gen):
     if len(idxs) <= prev_gen:                    # new backend not up yet
         return "booting"
     seg = "\n".join(lines[idxs[-1]:])
-    neg = (("Ignoring exception in on_ready" in seg and "application_commands" in seg
-            and ("10003" in seg or "Unknown Channel" in seg or "NotFound" in seg))
-           or "server rejected WebSocket connection: HTTP 403" in seg)
-    if neg:
+    on_ready_failed, gateway_rejected, positive = _boot_link_signals(seg)
+    if on_ready_failed or gateway_rejected:
         return "unauthorized"
-    if "Logged in as" in seg and "Commands synced" in seg:
+    if positive:
         return "connected"
     return "booting"
 
@@ -693,7 +708,7 @@ def save_license(key):
                 except Exception: d = {}
             d["license"] = key
             tmp = p + ".tmp"
-            json.dump(d, open(tmp, "w", encoding="utf-8"), indent=4, ensure_ascii=False)
+            json.dump(d, open(tmp, "w", encoding="utf-8"), indent=4, ensure_ascii=True)
             os.replace(tmp, p)
         except Exception as e:
             return {"ok": False, "error": "Could not save the license: %r" % (e,)}
@@ -710,65 +725,6 @@ def save_license(key):
     except Exception:
         pass
     return {"ok": True, "restarting": True}
-
-
-def _saved_completion():
-    """If the box is already onboarded (license + active account + saved bot
-    token), return (account_token, bot_token); else None. Used to auto-resume
-    after a reboot without making the user re-onboard."""
-    if not license_set():
-        return None
-    appdata = find_appdata()
-    if not appdata:
-        return None
-    try:
-        d = json.load(open(os.path.join(appdata, "nighty.config"), encoding="utf-8"))
-    except Exception:
-        return None
-    for u, info in (d.get("logins") or {}).items():
-        info = info or {}; app = info.get("app") or {}
-        if info.get("active") and info.get("token") and app.get("token"):
-            return info["token"], app["token"]
-    return None
-
-
-def _auto_resume():
-    """Bring an already-onboarded box back to life on each boot.
-
-    Nighty does not relaunch the bot from saved config on its own (it expects the
-    GUI onboarding to drive it), so after a reboot the panel stays down until the
-    bot token is re-pasted. Here we detect a fully-onboarded box and replay the
-    last two steps automatically — sign the account back in and re-feed the saved
-    bot token — so systemd autostart restores the panel + commands with no human
-    in the loop. Stays dormant until onboarding has been completed at least once."""
-    time.sleep(25)
-    for _ in range(45):
-        try:
-            if web_up():
-                return
-            saved = _saved_completion()
-            if not saved:
-                return   # not onboarded yet — let the user do it by hand
-            st = get_state()
-            if st.get("mode") == "main" or web_up():
-                return
-            if st.get("mode") in ("login", "bottoken"):
-                acct, bot = saved
-                try:
-                    apis = stub_get("/api/methods").get("apis", [])
-                    stub_call(api_index(apis, "MainApi", 0), "saveTokenToConfig", [acct])
-                except Exception:
-                    pass
-                time.sleep(8)
-                submit_bot_token(bot)
-                for _ in range(40):
-                    if web_up():
-                        return
-                    time.sleep(3)
-                return
-        except Exception:
-            pass
-        time.sleep(8)
 
 
 def _backend_log_path():
@@ -811,10 +767,7 @@ def bot_link_status():
             if "CTL server up" in ln:        # one per backend launch
                 start = i
         seg = "\n".join(lines[start:])
-        on_ready_failed = ("Ignoring exception in on_ready" in seg and
-                           ("application_commands" in seg) and
-                           ("10003" in seg or "Unknown Channel" in seg or "NotFound" in seg))
-        gateway_rejected = "server rejected WebSocket connection: HTTP 403" in seg
+        on_ready_failed, gateway_rejected, _ = _boot_link_signals(seg)
         if on_ready_failed or gateway_rejected:
             out = {"connected": False,
                    "reason": "bot_unauthorized" if on_ready_failed else "account_rejected"}
@@ -1319,6 +1272,18 @@ class H(BaseHTTPRequestHandler):
         try:
             ln = int(self.headers.get("Content-Length", 0) or 0)
             body = self.rfile.read(ln) if ln else b""
+            # Onboarding / control endpoints (/rpc, /provision, /recheck_auth,
+            # /check_*) drive the loopback-only stub control server and the on-disk
+            # config. They are used solely by the bridge's own setup wizard and the
+            # add-account flow. Once the box is locked into the working state the
+            # LAN client talks to the native panel (reverse-proxied) and never calls
+            # them, so we keep them closed then — the loopback stub is never
+            # reachable from the LAN in normal operation. This changes nothing a
+            # user sees: a locked box's legitimate traffic does not hit these paths.
+            if self.path.startswith(("/recheck_auth", "/check_account", "/check_bot",
+                                     "/provision", "/rpc")) \
+                    and setup_locked() and not add_account_active():
+                return self._send("not found", code=404)
             if self.path.startswith("/recheck_auth"):
                 # Authorization backstop: the user confirms they authorized the
                 # bot. Lock the setup as complete so the authorize screen never
@@ -1389,6 +1354,4 @@ class H(BaseHTTPRequestHandler):
 
 if __name__ == "__main__":
     print("bridge on %s:%d  ->  Web UI %s  /  stub %s" % (HOST, PORT, WEBPANEL, STUB), flush=True)
-    # On an already-onboarded box, restore the bot from saved config on boot.
-    threading.Thread(target=_auto_resume, daemon=True).start()
     ThreadingHTTPServer((HOST, PORT), H).serve_forever()
