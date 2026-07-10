@@ -45,6 +45,14 @@ export NIGHTY_STUB_LOG="${NIGHTY_STUB_LOG:-Z:$NIGHTY_HOME/stub_webview.log}"
 # the unimplemented advpack.RegInstall and aborts the process), and desktop
 # integration (winemenubuilder). Override via WINEDLLOVERRIDES in .env if needed.
 export WINEDLLOVERRIDES="${WINEDLLOVERRIDES:-mscoree=d;mshtml=d;winemenubuilder.exe=d}"
+# Force UTF-8 for the backend's console/log streams only. Nighty's logger prints
+# emoji (🔌 / ❌ / 🌐) in some connect/status messages; under Wine the default
+# stdout codec is cp1252, so those lines raise UnicodeEncodeError
+# ("--- Logging error ---"), are lost, and flood backend.log with tracebacks (I/O
+# that competes with the emulated bot). PYTHONIOENCODING changes ONLY the stdio
+# text encoding — NOT the default open() encoding — so Nighty's cp1252 config file
+# handling is left exactly as-is.
+export PYTHONIOENCODING="${PYTHONIOENCODING:-utf-8}"
 
 # Architecture-aware tuning: Box64 knobs only matter when emulating x86-64.
 case "$(uname -m)" in
