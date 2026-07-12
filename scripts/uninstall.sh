@@ -85,10 +85,11 @@ full_uninstall() {
   [ -f "$NIGHTY_STUB" ] && rm -f "$NIGHTY_STUB" && ok "removed $(basename "$NIGHTY_STUB")"
   [ -f "$NIGHTY_EXE" ]  && rm -f "$NIGHTY_EXE"  && ok "removed $(basename "$NIGHTY_EXE")"
 
-  # remove the lrclib blackhole install.sh added to /etc/hosts
-  if grep -q "nighty-linux-headless: lrclib blackhole" /etc/hosts 2>/dev/null; then
-    $SUDO sed -i '/nighty-linux-headless: lrclib blackhole/d;/^0\.0\.0\.0 lrclib\.net$/d;/^0\.0\.0\.0 api\.lrclib\.net$/d' /etc/hosts \
-      && ok "removed lrclib blackhole from /etc/hosts"
+  # remove the RP-fetch blackhole install.sh added to /etc/hosts (handles the
+  # older "lrclib blackhole" marker too, for installs made before it was renamed).
+  if grep -qE "nighty-linux-headless: (lrclib|RP-fetch) blackhole" /etc/hosts 2>/dev/null; then
+    $SUDO sed -i '/nighty-linux-headless: \(lrclib\|RP-fetch\) blackhole/d;/^0\.0\.0\.0 lrclib\.net$/d;/^0\.0\.0\.0 api\.lrclib\.net$/d;/^0\.0\.0\.0 api\.spotify\.com$/d' /etc/hosts \
+      && ok "removed RP-fetch blackhole from /etc/hosts"
   fi
 
   echo

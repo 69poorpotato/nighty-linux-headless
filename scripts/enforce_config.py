@@ -344,6 +344,42 @@ def prefetch_sounds(appdata):
     return msg
 
 
+# Nighty's user-history tracker (data/misc/user_history.json) is rewritten IN FULL
+# on the bot's asyncio event loop by the onUserUpdate listener — every time a
+# tracked user changes name/avatar. Left unbounded the file grows to many MB; on
+# the emulated backend that whole-file json.dump then blocks the loop for seconds,
+# so the gateway heartbeat times out ("heartbeat blocked") and the bot misses
+# Discord's 3s interaction ACK ("the application did not respond"). Nighty offers
+# no switch to turn the tracker off and we cannot touch its frozen writer — but we
+# CAN cap the file it loads: pruning it here, ONCE before each backend launch and
+# BEFORE Nighty reads it, keeps Nighty's in-memory dict (and therefore every
+# rewrite) small for the whole session. We keep the most-recently-added users and
+# write ASCII (cp1252-safe, see _save). Runs at startup only — mid-session pruning
+# would just be overwritten from Nighty's larger in-memory copy.
+USER_HISTORY_MAX_BYTES = int(env("USER_HISTORY_MAX_BYTES", "524288") or "524288")  # 512 KiB
+
+
+def cap_user_history(appdata):
+    path = os.path.join(appdata, "data", "misc", "user_history.json")
+    try:
+        size = os.path.getsize(path)
+    except OSError:
+        return "skip (none)"
+    if size <= USER_HISTORY_MAX_BYTES:
+        return "ok (%d KiB, under cap)" % (size // 1024)
+    d = _load(path)
+    hist = d.get("user_history") if isinstance(d, dict) else None
+    if not isinstance(hist, dict) or not hist:
+        return "skip (unexpected shape)"
+    items = list(hist.items())                       # insertion order: oldest first
+    keep_n = max(1, int(len(items) * USER_HISTORY_MAX_BYTES / size))
+    kept = items[-keep_n:]                            # keep the most-recent users
+    d["user_history"] = dict(kept)
+    _save(path, d)
+    return "pruned %d -> %d users (%d KiB over %d KiB cap)" % (
+        len(items), len(kept), size // 1024, USER_HISTORY_MAX_BYTES // 1024)
+
+
 def main():
     appdata = find_appdata()
     if not appdata:
@@ -354,6 +390,7 @@ def main():
     print("[enforce] web:", enforce_web(appdata))
     print("[enforce] profile:", enforce_safe_presence(appdata))
     print("[enforce] sounds:", prefetch_sounds(appdata))
+    print("[enforce] user_history:", cap_user_history(appdata))
     return 0
 
 
