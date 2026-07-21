@@ -23,6 +23,8 @@ WorkingDirectory=<REPO_DIR>
 ExecStart=/usr/bin/env bash <REPO_DIR>/scripts/run.sh --run
 Restart=always
 RestartSec=5
+SuccessExitStatus=23
+RestartPreventExitStatus=23
 
 [Install]
 WantedBy=multi-user.target

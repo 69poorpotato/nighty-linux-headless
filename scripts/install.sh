@@ -17,6 +17,7 @@
 # ─────────────────────────────────────────────────────────────────────────────
 set -uo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+PREFLIGHT="$HERE/scripts/preflight.py"
 cd "$HERE"
 
 # ── pretty output ────────────────────────────────────────────────────────────
@@ -79,6 +80,24 @@ pm_install() {
 # ensure a command exists; install its package if not
 ensure() { # <command> <generic-pkg> <label>
   if need "$1"; then ok "$3 present"; else add "$3 missing"; pm_install "$2"; need "$1" && ok "$3 installed" || die "$3 still missing after install"; fi
+}
+
+ensure_wine_runtime_libs() {
+  python3 "$PREFLIGHT" libs --quiet && { ok "native Wine/X11 libraries present"; return 0; }
+  warn "Some native libraries required by Wine/Box64 are missing."
+  python3 "$PREFLIGHT" libs || true
+  if [ "$PM" = apt ]; then
+    local packages="libx11-6 libxext6 libxrender1 libxfixes3 libxrandr2 libxcomposite1 libxi6 libxcursor1 libxinerama1 libxkbregistry0"
+    pm_refresh
+    add "installing Wine/X11 runtime libraries"
+    # shellcheck disable=SC2086
+    $PM_INSTALL $packages >/dev/null 2>&1 || $PM_INSTALL $packages || die "Failed to install Wine/X11 runtime libraries."
+    python3 "$PREFLIGHT" libs --quiet || die "Wine/X11 libraries are still missing after installation."
+    ok "native Wine/X11 libraries installed"
+  else
+    warn "Automatic Wine library installation is currently limited to apt-based distributions."
+    warn "Install the libraries listed above with your package manager before starting Nighty."
+  fi
 }
 
 # download helper: dl <url> <dest>
@@ -245,6 +264,7 @@ _resolve_static_wine_bin() { # <wine-dir>
 
 ensure_wine_static_x86() {
   ensure xz xz "xz (extractor)"   # the static Wine tarball is .tar.xz
+  ensure_wine_runtime_libs
   local wdir="$NIGHTY_HOME/wine" ver="${WINE_VERSION:-10.0}"
   _resolve_static_wine_bin "$wdir"
   if [ -n "$WINE_BIN_RESOLVED" ]; then ok "static x86-64 Wine present ($wdir)"; return; fi
@@ -272,7 +292,9 @@ fi
 # ── 5) write resolved runtime paths back into .env ──────────────────────────
 set_kv .env NIGHTY_HOME "$NIGHTY_HOME"
 set_kv .env WINEPREFIX  "$NIGHTY_HOME/prefix"
-[ -n "$WINE_BIN_RESOLVED" ] && set_kv .env WINE_BIN "$WINE_BIN_RESOLVED"
+[ -n "$WINE_BIN_RESOLVED" ] || die "Wine setup finished without a resolved WINE_BIN."
+python3 "$PREFLIGHT" wine "$WINE_BIN_RESOLVED" || die "Resolved Wine launcher is not usable."
+set_kv .env WINE_BIN "$WINE_BIN_RESOLVED"
 
 # ── 6) locate your Nighty.exe ────────────────────────────────────────────────
 SRC="${NIGHTY_EXE:-$HERE/Nighty.exe}"
@@ -287,6 +309,11 @@ if [ ! -f "$SRC" ]; then
   printf '  (Nighty.exe is never bundled or redistributed — bring your own copy.)\n'
   die "Nighty.exe not found at: $SRC"
 fi
+if [ "$IS_X86" = 1 ]; then
+  python3 "$PREFLIGHT" pe "$SRC" || die "Nighty.exe failed PE validation."
+else
+  python3 "$PREFLIGHT" pe "$SRC" --require-x64 || die "ARM/Box64 requires a 64-bit x86-64 Nighty.exe."
+fi
 
 # ── 7) repack (must run under Python 3.8 — marshal format is version-specific) ─
 info "Ensuring Python 3.8 (via uv) for the repack…"
@@ -297,6 +324,11 @@ ok "Python 3.8: $PY38"
 
 info "Repacking $(basename "$SRC") → $(basename "$OUT") (headless webview stub)…"
 NIGHTY_EXE="$SRC" NIGHTY_STUB="$OUT" "$PY38" scripts/repack.py "$SRC" "$OUT" || die "Repack failed."
+if [ "$IS_X86" = 1 ]; then
+  python3 "$PREFLIGHT" pe "$OUT" || die "Generated stub failed PE validation."
+else
+  python3 "$PREFLIGHT" pe "$OUT" --require-x64 || die "Generated stub is not x86-64."
+fi
 ok "Repack done: $OUT"
 
 # ── 8) RP-fetch blackhole (performance) ──────────────────────────────────────

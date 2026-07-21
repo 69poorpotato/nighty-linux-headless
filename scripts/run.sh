@@ -27,6 +27,9 @@ set -a; [ -f "$HERE/.env" ] && . "$HERE/.env"; set +a
 : "${STUB_PORT:=8765}"
 : "${BRIDGE_PORT:=8088}"
 : "${ENFORCE_WEBUI:=1}"
+: "${NIGHTY_SINGLE_INSTANCE:=enforce}"
+: "${NIGHTY_INSTANCE_LOCK:=$NIGHTY_HOME/run.lock}"
+: "${XVFB_TIMEOUT:=10}"
 # Max seconds to wait for Nighty's stub control server to answer after
 # launching Wine before assuming the boot hung and retrying. Some Wine builds
 # can stall during first-prefix init well before Nighty's own code ever runs.
@@ -74,6 +77,158 @@ ulimit -s 8192 2>/dev/null || true
 
 log() { echo "[run] $(date '+%H:%M:%S') $*"; }
 
+# Single-instance guard.  The bridge/process probes also recognise an older
+# release which is already running but does not hold the new advisory lock.
+_INSTANCE_OWNER=0
+_INSTANCE_LOCK_KIND=""
+_INSTANCE_LOCK_DIR="${NIGHTY_INSTANCE_LOCK}.d"
+_INSTANCE_META="${NIGHTY_INSTANCE_LOCK}.meta"
+
+panel_url() {
+  local ip
+  ip="$(hostname -I 2>/dev/null | awk '{print $1}')"
+  [ -n "$ip" ] || ip="<this-host-ip>"
+  printf 'http://%s:%s/' "$ip" "$BRIDGE_PORT"
+}
+
+probe_nighty_bridge() {
+  local body="" url="http://127.0.0.1:${BRIDGE_PORT}/ready"
+  if command -v curl >/dev/null 2>&1; then
+    body="$(curl -fsS --max-time 2 "$url" 2>/dev/null || true)"
+  elif command -v wget >/dev/null 2>&1; then
+    body="$(wget -qO- -T 2 "$url" 2>/dev/null || true)"
+  elif command -v python3 >/dev/null 2>&1; then
+    body="$(python3 - "$url" <<'PY' 2>/dev/null || true
+import sys, urllib.request
+print(urllib.request.urlopen(sys.argv[1], timeout=2).read().decode("utf-8", "replace"))
+PY
+)"
+  fi
+  case "$body" in *'"ready"'*) return 0 ;; *) return 1 ;; esac
+}
+
+bridge_port_in_use() {
+  (exec 8<>"/dev/tcp/127.0.0.1/${BRIDGE_PORT}") >/dev/null 2>&1
+}
+
+find_existing_runner() {
+  local pid cmd
+  command -v pgrep >/dev/null 2>&1 || return 1
+  for pid in $(pgrep -f '[s]cripts/run.sh' 2>/dev/null || true); do
+    [ "$pid" = "$$" ] && continue
+    if is_ancestor_pid "$pid"; then continue; fi
+    cmd="$(tr '\0' ' ' <"/proc/$pid/cmdline" 2>/dev/null || true)"
+    case "$cmd" in *scripts/run.sh*) printf '%s' "$pid"; return 0 ;; esac
+  done
+  return 1
+}
+
+is_ancestor_pid() {
+  local wanted="$1" current="$$" parent=""
+  while [ "$current" -gt 1 ] 2>/dev/null; do
+    parent="$(awk '/^PPid:/ {print $2}' "/proc/$current/status" 2>/dev/null || true)"
+    [ -n "$parent" ] || break
+    [ "$parent" = "$wanted" ] && return 0
+    current="$parent"
+  done
+  return 1
+}
+
+write_instance_meta() {
+  local tmp="${_INSTANCE_META}.$$"
+  ( umask 077
+    {
+      printf 'pid=%s\n' "$$"
+      printf 'started=%s\n' "$(date -u '+%Y-%m-%dT%H:%M:%SZ')"
+      printf 'repo=%s\n' "$HERE"
+      printf 'panel=%s\n' "$(panel_url)"
+    } >"$tmp"
+  ) && mv -f "$tmp" "$_INSTANCE_META"
+}
+
+release_instance_guard() {
+  [ "$_INSTANCE_OWNER" = 1 ] || return 0
+  if [ -f "$_INSTANCE_META" ] && grep -qx "pid=$$" "$_INSTANCE_META" 2>/dev/null; then
+    rm -f "$_INSTANCE_META"
+  fi
+  if [ "$_INSTANCE_LOCK_KIND" = mkdir ] && [ -d "$_INSTANCE_LOCK_DIR" ] && [ ! -L "$_INSTANCE_LOCK_DIR" ]; then
+    rm -f "$_INSTANCE_LOCK_DIR/pid" 2>/dev/null || true
+    rmdir "$_INSTANCE_LOCK_DIR" 2>/dev/null || true
+  fi
+  _INSTANCE_OWNER=0
+}
+
+acquire_instance_lock() {
+  [ "$NIGHTY_SINGLE_INSTANCE" = off ] && return 0
+  if command -v flock >/dev/null 2>&1; then
+    exec 9>"$NIGHTY_INSTANCE_LOCK" || { log "cannot open instance lock: $NIGHTY_INSTANCE_LOCK"; return 24; }
+    flock -n 9 || return 23
+    _INSTANCE_LOCK_KIND=flock
+    _INSTANCE_OWNER=1
+    write_instance_meta
+    return 0
+  fi
+
+  # Portable fallback for minimal distributions without util-linux/flock.
+  if ! mkdir "$_INSTANCE_LOCK_DIR" 2>/dev/null; then
+    local owner="" cmd=""
+    [ -f "$_INSTANCE_LOCK_DIR/pid" ] && owner="$(cat "$_INSTANCE_LOCK_DIR/pid" 2>/dev/null || true)"
+    if [ -n "$owner" ] && kill -0 "$owner" 2>/dev/null; then
+      cmd="$(tr '\0' ' ' <"/proc/$owner/cmdline" 2>/dev/null || true)"
+      case "$cmd" in *scripts/run.sh*) return 23 ;; esac
+    fi
+    if [ -d "$_INSTANCE_LOCK_DIR" ] && [ ! -L "$_INSTANCE_LOCK_DIR" ]; then
+      rm -f "$_INSTANCE_LOCK_DIR/pid" 2>/dev/null || true
+      rmdir "$_INSTANCE_LOCK_DIR" 2>/dev/null || true
+    fi
+    mkdir "$_INSTANCE_LOCK_DIR" 2>/dev/null || return 23
+  fi
+  ( umask 077; printf '%s\n' "$$" >"$_INSTANCE_LOCK_DIR/pid" ) || return 24
+  _INSTANCE_LOCK_KIND=mkdir
+  _INSTANCE_OWNER=1
+  write_instance_meta
+  return 0
+}
+
+report_existing_instance() {
+  local pid="${1:-}"
+  echo
+  log "Nighty is already running${pid:+ (runner PID $pid)} -- a duplicate was NOT started."
+  echo "    panel:    $(panel_url)"
+  echo "    status:   systemctl status nighty --no-pager"
+  echo "    live log: journalctl -u nighty -f"
+}
+
+guard_existing_instance() {
+  local rc pid=""
+  [ "$NIGHTY_SINGLE_INSTANCE" = off ] && return 0
+  acquire_instance_lock; rc=$?
+  if [ "$rc" -eq 23 ]; then
+    pid="$(find_existing_runner || true)"
+    report_existing_instance "$pid"
+    return 23
+  fi
+  [ "$rc" -eq 0 ] || return "$rc"
+
+  if probe_nighty_bridge; then
+    pid="$(find_existing_runner || true)"
+    report_existing_instance "$pid"
+    return 23
+  fi
+  pid="$(find_existing_runner || true)"
+  if [ -n "$pid" ]; then
+    report_existing_instance "$pid"
+    log "The existing process is still starting or its panel is unhealthy; inspect its logs instead of starting another copy."
+    return 23
+  fi
+  if bridge_port_in_use; then
+    log "FATAL: port $BRIDGE_PORT is occupied by something that is not a Nighty bridge."
+    log "Refusing to kill an unrelated process or start a conflicting instance."
+    return 24
+  fi
+  return 0
+}
+
 # ── autostart (systemd) ──────────────────────────────────────────────────────
 setup_autostart() {
   if ! command -v systemctl >/dev/null 2>&1; then
@@ -84,12 +239,16 @@ setup_autostart() {
   local SUDO=""; [ "$(id -u)" -ne 0 ] && SUDO="sudo"
   local unit=/etc/systemd/system/nighty.service
 
-  # Make sure no manual instance is holding the ports before the service starts.
-  pkill -f "scripts/bridge.py" 2>/dev/null || true
-  pkill -f "$NIGHTY_STUB" 2>/dev/null || true
-  pkill -f "Xvfb :$DISPLAY_NUM" 2>/dev/null || true
-  ( "${WINE_BIN%64}server" -k 2>/dev/null || wineserver -k 2>/dev/null ) || true
-  sleep 2
+  if systemctl is-active --quiet nighty.service 2>/dev/null; then
+    report_existing_instance ""
+    log "Autostart is already active; no second service was created."
+    return 0
+  fi
+  if probe_nighty_bridge || [ -n "$(find_existing_runner || true)" ]; then
+    report_existing_instance "$(find_existing_runner || true)"
+    log "Stop the manual instance with Ctrl+C, then run autostart again."
+    return 23
+  fi
 
   log "installing systemd service → $unit"
   $SUDO tee "$unit" >/dev/null <<EOF
@@ -105,6 +264,8 @@ WorkingDirectory=$HERE
 ExecStart=/usr/bin/env bash $HERE/scripts/run.sh --run
 Restart=always
 RestartSec=5
+SuccessExitStatus=23
+RestartPreventExitStatus=23
 
 [Install]
 WantedBy=multi-user.target
@@ -122,19 +283,56 @@ EOF
 
 # ── the stack ────────────────────────────────────────────────────────────────
 _CLEANED=0
+_STACK_STARTED=0
 cleanup() {
   [ "$_CLEANED" = 1 ] && return 0; _CLEANED=1
+  if [ "$_STACK_STARTED" != 1 ]; then
+    release_instance_guard
+    return 0
+  fi
   log "shutting down…"
-  pkill -f "scripts/bridge.py" 2>/dev/null || true
+  pkill -f "$HERE/scripts/bridge.py" 2>/dev/null || true
+  pkill -f "$HERE/scripts/webui_guard.py" 2>/dev/null || true
   pkill -f "$NIGHTY_STUB" 2>/dev/null || true
   ( "${WINE_BIN%64}server" -k 2>/dev/null || wineserver -k 2>/dev/null ) || true
   pkill -f "Xvfb :$DISPLAY_NUM" 2>/dev/null || true
+  release_instance_guard
 }
 
 run_stack() {
-  [ -f "$NIGHTY_STUB" ] || { echo "[run] FATAL: $NIGHTY_STUB not found. Run scripts/install.sh first." >&2; exit 1; }
   trap cleanup EXIT
   trap 'exit 0' INT TERM
+
+  local guard_rc
+  guard_existing_instance; guard_rc=$?
+  if [ "$guard_rc" -eq 23 ]; then
+    case "${1:-}" in --run|--service) return 23 ;; *) return 0 ;; esac
+  fi
+  [ "$guard_rc" -eq 0 ] || return "$guard_rc"
+
+  [ -f "$NIGHTY_STUB" ] || { echo "[run] FATAL: $NIGHTY_STUB not found. Run scripts/install.sh first." >&2; return 1; }
+  if ! python3 "$HERE/scripts/preflight.py" wine "$WINE_BIN"; then
+    for wine_candidate in "$NIGHTY_HOME/wine/bin/wine64" "$NIGHTY_HOME/wine/bin/wine"; do
+      if [ -x "$wine_candidate" ]; then
+        WINE_BIN="$wine_candidate"
+        export WINE_BIN
+        log "Recovered the bundled Wine launcher: $WINE_BIN"
+        break
+      fi
+    done
+    python3 "$HERE/scripts/preflight.py" wine "$WINE_BIN" || {
+      log "FATAL: Wine launcher is unavailable. Re-run: bash scripts/install.sh"
+      return 1
+    }
+  fi
+  case "$(uname -m)" in
+    x86_64|amd64) : ;;
+    *) python3 "$HERE/scripts/preflight.py" libs --quiet || {
+         python3 "$HERE/scripts/preflight.py" libs || true
+         log "FATAL: native Wine/X11 libraries are missing. Re-run: bash scripts/install.sh"
+         return 1
+       } ;;
+  esac
 
   log "host architecture: $ARCH_DESC"
 
@@ -147,10 +345,27 @@ run_stack() {
   # ourselves rather than relying on Xvfb to do it.
   mkdir -p /tmp/.X11-unix
   chmod 1777 /tmp/.X11-unix 2>/dev/null || true
-  pkill -f "Xvfb :$DISPLAY_NUM" 2>/dev/null || true
-  sleep 1
-  Xvfb ":$DISPLAY_NUM" -screen 0 1366x768x24 -nolisten tcp >/dev/null 2>&1 &
-  sleep 2
+  if [ -S "/tmp/.X11-unix/X${DISPLAY_NUM}" ] || pgrep -f "[X]vfb :$DISPLAY_NUM" >/dev/null 2>&1; then
+    log "FATAL: X display :$DISPLAY_NUM is already in use; refusing to kill an unrelated Xvfb."
+    return 1
+  fi
+  _STACK_STARTED=1
+  Xvfb ":$DISPLAY_NUM" -screen 0 1366x768x24 -nolisten tcp >"$NIGHTY_HOME/xvfb.log" 2>&1 &
+  XVFB_PID=$!
+  xvfb_waited=0
+  while [ "$xvfb_waited" -lt "$XVFB_TIMEOUT" ]; do
+    if kill -0 "$XVFB_PID" 2>/dev/null && [ -S "/tmp/.X11-unix/X${DISPLAY_NUM}" ]; then
+      break
+    fi
+    kill -0 "$XVFB_PID" 2>/dev/null || break
+    sleep 1
+    xvfb_waited=$((xvfb_waited + 1))
+  done
+  if ! kill -0 "$XVFB_PID" 2>/dev/null || [ ! -S "/tmp/.X11-unix/X${DISPLAY_NUM}" ]; then
+    log "FATAL: Xvfb failed to become ready on :$DISPLAY_NUM within ${XVFB_TIMEOUT}s."
+    tail -n 20 "$NIGHTY_HOME/xvfb.log" 2>/dev/null || true
+    return 1
+  fi
 
   # Continuous Web UI hard-enforcement.
   if [ "$ENFORCE_WEBUI" = "1" ]; then
@@ -223,7 +438,7 @@ EOF
 }
 
 case "${1:-}" in
-  once|--run|run|--service) run_stack; exit $? ;;
+  once|--run|run|--service) run_stack "${1:-}"; exit $? ;;
   autostart|--autostart)    setup_autostart; exit $? ;;
   -h|--help|help)           usage; exit 0 ;;
   "")                       : ;;   # no command → interactive menu below

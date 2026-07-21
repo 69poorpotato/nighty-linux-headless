@@ -1,0 +1,160 @@
+#!/usr/bin/env python3
+"""Small, side-effect-free startup/install checks for Nighty headless."""
+
+from __future__ import annotations
+
+import argparse
+import ctypes
+import ctypes.util
+import os
+from pathlib import Path
+import shutil
+import struct
+import sys
+from typing import List, Optional, Tuple
+
+
+PE_MACHINES = {
+    0x014C: "i386 (32-bit)",
+    0x8664: "x86-64 (64-bit)",
+    0xAA64: "ARM64",
+}
+
+WINE_NATIVE_LIBS = (
+    ("X11", "libx11-6"),
+    ("Xext", "libxext6"),
+    ("Xrender", "libxrender1"),
+    ("Xfixes", "libxfixes3"),
+    ("Xrandr", "libxrandr2"),
+    ("Xcomposite", "libxcomposite1"),
+    ("Xi", "libxi6"),
+    ("Xcursor", "libxcursor1"),
+    ("Xinerama", "libxinerama1"),
+    ("xkbregistry", "libxkbregistry0"),
+)
+
+
+class PreflightError(RuntimeError):
+    pass
+
+
+def pe_machine(path: Path) -> int:
+    try:
+        with path.open("rb") as fh:
+            header = fh.read(64)
+            if len(header) < 64 or header[:2] != b"MZ":
+                raise PreflightError("not a Windows PE executable (missing MZ header)")
+            pe_offset = struct.unpack_from("<I", header, 0x3C)[0]
+            if pe_offset < 64 or pe_offset > path.stat().st_size - 6:
+                raise PreflightError("invalid PE header offset")
+            fh.seek(pe_offset)
+            pe = fh.read(6)
+    except OSError as exc:
+        raise PreflightError(f"cannot read file: {exc}") from exc
+    if len(pe) != 6 or pe[:4] != b"PE\0\0":
+        raise PreflightError("invalid PE signature")
+    return struct.unpack_from("<H", pe, 4)[0]
+
+
+def check_pe(path: Path, require_x64: bool) -> int:
+    if not path.is_file():
+        print(f"[preflight] ERROR: executable not found: {path}", file=sys.stderr)
+        return 2
+    try:
+        machine = pe_machine(path)
+    except PreflightError as exc:
+        print(f"[preflight] ERROR: {path}: {exc}", file=sys.stderr)
+        return 2
+    label = PE_MACHINES.get(machine, f"unknown machine 0x{machine:04x}")
+    if require_x64 and machine != 0x8664:
+        print(
+            f"[preflight] ERROR: {path.name} is {label}; ARM/Box64 requires an x86-64 PE32+ build.",
+            file=sys.stderr,
+        )
+        return 3
+    if machine not in (0x014C, 0x8664):
+        print(f"[preflight] ERROR: unsupported executable architecture: {label}", file=sys.stderr)
+        return 3
+    print(f"[preflight] {path.name}: {label}")
+    return 0
+
+
+def missing_native_libs() -> List[Tuple[str, str]]:
+    missing: List[Tuple[str, str]] = []
+    for library, package in WINE_NATIVE_LIBS:
+        candidate = ctypes.util.find_library(library)
+        if not candidate:
+            missing.append((library, package))
+            continue
+        try:
+            ctypes.CDLL(candidate)
+        except OSError:
+            missing.append((library, package))
+    return missing
+
+
+def check_libs(quiet: bool) -> int:
+    missing = missing_native_libs()
+    if not missing:
+        if not quiet:
+            print("[preflight] native Wine/X11 libraries: OK")
+        return 0
+    if not quiet:
+        print("[preflight] missing native libraries required by Wine/Box64:", file=sys.stderr)
+        for library, package in missing:
+            print(f"  {library} (Debian package: {package})", file=sys.stderr)
+    return 4
+
+
+def resolve_command(value: str) -> Optional[Path]:
+    if os.sep in value or (os.altsep and os.altsep in value):
+        return Path(value).expanduser()
+    resolved = shutil.which(value)
+    return Path(resolved) if resolved else None
+
+
+def check_wine(value: str) -> int:
+    path = resolve_command(value)
+    if path is None or not path.is_file():
+        print(f"[preflight] ERROR: WINE_BIN does not resolve to a file: {value}", file=sys.stderr)
+        return 5
+    if not os.access(path, os.X_OK):
+        print(f"[preflight] ERROR: WINE_BIN is not executable: {path}", file=sys.stderr)
+        return 5
+    try:
+        with path.open("rb") as fh:
+            magic = fh.read(2)
+    except OSError as exc:
+        print(f"[preflight] ERROR: cannot read WINE_BIN {path}: {exc}", file=sys.stderr)
+        return 5
+    kind = "launcher script" if magic == b"#!" else "executable"
+    print(f"[preflight] WINE_BIN: {path} ({kind})")
+    return 0
+
+
+def build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(description=__doc__)
+    sub = parser.add_subparsers(dest="command", required=True)
+    pe = sub.add_parser("pe", help="validate a Windows PE executable")
+    pe.add_argument("path", type=Path)
+    pe.add_argument("--require-x64", action="store_true")
+    libs = sub.add_parser("libs", help="check native Wine/X11 runtime libraries")
+    libs.add_argument("--quiet", action="store_true")
+    wine = sub.add_parser("wine", help="validate WINE_BIN")
+    wine.add_argument("path")
+    return parser
+
+
+def main(argv: Optional[List[str]] = None) -> int:
+    args = build_parser().parse_args(argv)
+    if args.command == "pe":
+        return check_pe(args.path, args.require_x64)
+    if args.command == "libs":
+        return check_libs(args.quiet)
+    if args.command == "wine":
+        return check_wine(args.path)
+    return 2
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
