@@ -342,15 +342,37 @@ ok "Repack done: $OUT"
 info "Performance: blackholing RP fetch hosts (lrclib.net, api.spotify.com)…"
 if [ "${BLOCK_LRCLIB:-1}" != 1 ]; then
   ok "skipped (BLOCK_LRCLIB=0)"
-elif grep -q "nighty-linux-headless: RP-fetch blackhole" /etc/hosts 2>/dev/null; then
-  ok "already set in /etc/hosts"
-elif printf '\n# nighty-linux-headless: RP-fetch blackhole (lyrics/now-playing fetches freeze the bot under emulation)\n0.0.0.0 lrclib.net\n0.0.0.0 api.lrclib.net\n0.0.0.0 api.spotify.com\n' | $SUDO tee -a /etc/hosts >/dev/null 2>&1; then
-  ok "lrclib.net + api.spotify.com blackholed in /etc/hosts"
 else
-  warn "could not edit /etc/hosts — add these lines manually (needs root):"
-  warn "    0.0.0.0 lrclib.net"
-  warn "    0.0.0.0 api.lrclib.net"
-  warn "    0.0.0.0 api.spotify.com"
+  hosts_targets=(/etc/hosts)
+  os_id="$(. /etc/os-release 2>/dev/null; printf '%s' "${ID:-}")"
+  cloud_hosts="/etc/cloud/templates/hosts.${os_id}.tmpl"
+  if grep -q "manage_etc_hosts.*True" /etc/hosts 2>/dev/null && [ -f "$cloud_hosts" ]; then
+    hosts_targets+=("$cloud_hosts")
+    info "cloud-init manages /etc/hosts; updating its $os_id template too"
+  fi
+  hosts_failed=0
+  for hosts_file in "${hosts_targets[@]}"; do
+    if ! grep -q "nighty-linux-headless: RP-fetch blackhole" "$hosts_file" 2>/dev/null; then
+      printf '\n# nighty-linux-headless: RP-fetch blackhole (lyrics/now-playing fetches freeze the bot under emulation)\n' \
+        | $SUDO tee -a "$hosts_file" >/dev/null 2>&1 || hosts_failed=1
+    fi
+    for host in lrclib.net api.lrclib.net api.spotify.com; do
+      if ! grep -Eq "^[[:space:]]*0\\.0\\.0\\.0[[:space:]]+$host([[:space:]]|$)" "$hosts_file" 2>/dev/null; then
+        printf '0.0.0.0 %s\n' "$host" | $SUDO tee -a "$hosts_file" >/dev/null 2>&1 || hosts_failed=1
+      fi
+    done
+  done
+  if [ "$hosts_failed" -eq 0 ] \
+     && grep -Eq '^[[:space:]]*0\.0\.0\.0[[:space:]]+lrclib\.net([[:space:]]|$)' /etc/hosts \
+     && grep -Eq '^[[:space:]]*0\.0\.0\.0[[:space:]]+api\.lrclib\.net([[:space:]]|$)' /etc/hosts \
+     && grep -Eq '^[[:space:]]*0\.0\.0\.0[[:space:]]+api\.spotify\.com([[:space:]]|$)' /etc/hosts; then
+    ok "lrclib.net + api.spotify.com blackholed in /etc/hosts"
+  else
+    warn "could not fully update /etc/hosts — add the missing lines manually (needs root):"
+    warn "    0.0.0.0 lrclib.net"
+    warn "    0.0.0.0 api.lrclib.net"
+    warn "    0.0.0.0 api.spotify.com"
+  fi
 fi
 
 # ── done ─────────────────────────────────────────────────────────────────────

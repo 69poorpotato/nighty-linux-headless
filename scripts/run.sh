@@ -30,10 +30,16 @@ set -a; [ -f "$HERE/.env" ] && . "$HERE/.env"; set +a
 : "${NIGHTY_SINGLE_INSTANCE:=enforce}"
 : "${NIGHTY_INSTANCE_LOCK:=$NIGHTY_HOME/run.lock}"
 : "${XVFB_TIMEOUT:=10}"
+: "${BLOCK_LRCLIB:=1}"
+: "${NIGHTY_BOX64_PROFILE:=safe}"
 # Max seconds to wait for Nighty's stub control server to answer after
 # launching Wine before assuming the boot hung and retrying. Some Wine builds
 # can stall during first-prefix init well before Nighty's own code ever runs.
 : "${BOOT_TIMEOUT:=300}"
+# Once the stub is alive, the native panel still has to authenticate, sync and
+# open WEBUI_PORT. A transient Discord/Cloudflare failure can otherwise leave the
+# loading screen alive forever even though the first-stage watchdog has exited.
+: "${WEBUI_BOOT_TIMEOUT:=180}"
 mkdir -p "$NIGHTY_HOME"
 
 export WINEPREFIX
@@ -61,17 +67,22 @@ export PYTHONIOENCODING="${PYTHONIOENCODING:-utf-8}"
 case "$(uname -m)" in
   x86_64|amd64) ARCH_DESC="x86-64 (native Wine)" ;;
   *) ARCH_DESC="$(uname -m) (Wine over Box64)"
-     export BOX64_NOBANNER=1 BOX64_LOG=0
-     # Dynarec settings for the emulated x86-64 backend. These default to the
-     # SAFE/conservative values: Nighty bundles a Go-based tls-client whose runtime
-     # crashes on start ("panic on system stack" in schedinit) under more
-     # aggressive dynarec (BIGBLOCK/CALLRET on, relaxed SAFEFLAGS, weaker
-     # STRONGMEM). They are exposed here so you can experiment from .env at your own
-     # risk, but the defaults below are the ones proven stable on this build.
-     : "${BOX64_DYNAREC_BIGBLOCK:=0}"; : "${BOX64_DYNAREC_STRONGMEM:=3}"
-     : "${BOX64_DYNAREC_SAFEFLAGS:=2}"; : "${BOX64_DYNAREC_CALLRET:=0}"
+     export BOX64_NOBANNER="${BOX64_NOBANNER:-1}" BOX64_LOG="${BOX64_LOG:-0}"
+     # Existing installations stay conservative by default. The balanced profile
+     # removes most global barriers while config/box64-nighty.rc restores strict
+     # settings only for the crash-prone bundled Go TLS client.
+     case "$NIGHTY_BOX64_PROFILE" in
+       safe)     _BB=0; _SM=3; _SF=2; _CR=0 ;;
+       balanced) _BB=1; _SM=1; _SF=1; _CR=0 ;;
+       *) echo "[run] FATAL: unknown NIGHTY_BOX64_PROFILE '$NIGHTY_BOX64_PROFILE' (use safe or balanced)" >&2; exit 2 ;;
+     esac
+     : "${BOX64_DYNAREC_BIGBLOCK:=$_BB}"; : "${BOX64_DYNAREC_STRONGMEM:=$_SM}"
+     : "${BOX64_DYNAREC_SAFEFLAGS:=$_SF}"; : "${BOX64_DYNAREC_CALLRET:=$_CR}"
+     if [ -f "$HERE/config/box64-nighty.rc" ]; then
+       export BOX64_RCFILE="${BOX64_RCFILE:-$HERE/config/box64-nighty.rc}"
+     fi
      export BOX64_DYNAREC_BIGBLOCK BOX64_DYNAREC_STRONGMEM \
-            BOX64_DYNAREC_SAFEFLAGS BOX64_DYNAREC_CALLRET ;;
+            BOX64_DYNAREC_SAFEFLAGS BOX64_DYNAREC_CALLRET BOX64_RCFILE ;;
 esac
 ulimit -s 8192 2>/dev/null || true
 
@@ -297,6 +308,31 @@ EOF
 # ── the stack ────────────────────────────────────────────────────────────────
 _CLEANED=0
 _STACK_STARTED=0
+XVFB_PID=""
+GUARD_PID=""
+BRIDGE_LOOP_PID=""
+BACKEND_LOOP_PID=""
+
+terminate_pid() {
+  local pid="${1:-}"
+  [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null || return 0
+  kill -TERM "$pid" 2>/dev/null || true
+}
+
+kill_process_with_arg() {
+  local wanted="$1" proc pid arg matched
+  for proc in /proc/[0-9]*; do
+    [ -r "$proc/cmdline" ] || continue
+    pid="${proc##*/}"
+    [ "$pid" = "${BASHPID:-$$}" ] && continue
+    matched=0
+    while IFS= read -r -d '' arg; do
+      [ "$arg" = "$wanted" ] && matched=1
+    done <"$proc/cmdline" 2>/dev/null
+    [ "$matched" -eq 1 ] && kill -TERM "$pid" 2>/dev/null || true
+  done
+}
+
 cleanup() {
   [ "$_CLEANED" = 1 ] && return 0; _CLEANED=1
   if [ "$_STACK_STARTED" != 1 ]; then
@@ -304,11 +340,17 @@ cleanup() {
     return 0
   fi
   log "shutting down…"
-  pkill -f "$HERE/scripts/bridge.py" 2>/dev/null || true
-  pkill -f "$HERE/scripts/webui_guard.py" 2>/dev/null || true
-  pkill -f "$NIGHTY_STUB" 2>/dev/null || true
+  # Stop supervisors before their children, otherwise their persistence loops
+  # immediately respawn the processes and survive as orphans.
+  terminate_pid "$BACKEND_LOOP_PID"
+  terminate_pid "$BRIDGE_LOOP_PID"
+  terminate_pid "$GUARD_PID"
+  sleep 1
+  # Match real argv entries, not arbitrary command-line text from an SSH script.
+  kill_process_with_arg "$HERE/scripts/bridge.py"
+  kill_process_with_arg "$HERE/scripts/webui_guard.py"
   ( "${WINE_BIN%64}server" -k 2>/dev/null || wineserver -k 2>/dev/null ) || true
-  pkill -f "Xvfb :$DISPLAY_NUM" 2>/dev/null || true
+  terminate_pid "$XVFB_PID"
   release_instance_guard
 }
 
@@ -348,6 +390,16 @@ run_stack() {
   esac
 
   log "host architecture: $ARCH_DESC"
+  case "$(uname -m)" in
+    x86_64|amd64) : ;;
+    *)
+      log "Box64 profile: $NIGHTY_BOX64_PROFILE (BIGBLOCK=$BOX64_DYNAREC_BIGBLOCK STRONGMEM=$BOX64_DYNAREC_STRONGMEM SAFEFLAGS=$BOX64_DYNAREC_SAFEFLAGS CALLRET=$BOX64_DYNAREC_CALLRET)"
+      if [ "$BLOCK_LRCLIB" = 1 ] && ! grep -Eq '^[[:space:]]*0\.0\.0\.0[[:space:]]+(api\.)?lrclib\.net([[:space:]]|$)' /etc/hosts 2>/dev/null; then
+        log "WARNING: lrclib.net is not blocked; its synchronous lyrics fetch can freeze Discord commands for 10-60s."
+        log "Re-run bash scripts/install.sh or add the documented /etc/hosts entries."
+      fi
+      ;;
+  esac
 
   # Pre-launch config enforcement (notifications off, Web UI creds + web:true).
   python3 "$HERE/scripts/enforce_config.py" || true
@@ -383,6 +435,7 @@ run_stack() {
   # Continuous Web UI hard-enforcement.
   if [ "$ENFORCE_WEBUI" = "1" ]; then
     python3 "$HERE/scripts/webui_guard.py" >>"$NIGHTY_HOME/guard.log" 2>&1 &
+    GUARD_PID=$!
   fi
 
   # Web UI bridge — kept alive in its own loop.
@@ -391,6 +444,7 @@ run_stack() {
       echo "[bridge] $(date '+%H:%M:%S') exited — restarting in 3s" >>"$NIGHTY_HOME/bridge.log"
       sleep 3
     done ) &
+  BRIDGE_LOOP_PID=$!
   log "Web UI bridge up — open  http://<this-host-ip>:$BRIDGE_PORT/"
 
   # Backend — relaunch forever (covers a UI-triggered restart/close). A
@@ -405,19 +459,37 @@ run_stack() {
 
       (
         waited=0
+        stub_ready=0
         while [ "$waited" -lt "$BOOT_TIMEOUT" ]; do
           kill -0 "$BACKEND_PID" 2>/dev/null || exit 0
           # Bash builtin TCP probe (no curl/wget dependency): the stub is up
           # once something accepts a connection on STUB_PORT.
           if (exec 3<>"/dev/tcp/127.0.0.1/${STUB_PORT}") 2>/dev/null; then
             exec 3<&- 3>&-
-            exit 0
+            stub_ready=1
+            break
           fi
           sleep 5
           waited=$((waited + 5))
         done
-        if kill -0 "$BACKEND_PID" 2>/dev/null; then
+        if [ "$stub_ready" -ne 1 ] && kill -0 "$BACKEND_PID" 2>/dev/null; then
           log "backend boot timed out after ${BOOT_TIMEOUT}s (stub never answered on :${STUB_PORT}) — killing and retrying."
+          kill -9 "$BACKEND_PID" 2>/dev/null || true
+          exit 0
+        fi
+
+        web_waited=0
+        while [ "$web_waited" -lt "$WEBUI_BOOT_TIMEOUT" ]; do
+          kill -0 "$BACKEND_PID" 2>/dev/null || exit 0
+          if (exec 4<>"/dev/tcp/127.0.0.1/${WEBUI_PORT}") 2>/dev/null; then
+            exec 4<&- 4>&-
+            exit 0
+          fi
+          sleep 5
+          web_waited=$((web_waited + 5))
+        done
+        if kill -0 "$BACKEND_PID" 2>/dev/null; then
+          log "backend panel timed out after ${WEBUI_BOOT_TIMEOUT}s (stub is up but Web UI never answered on :${WEBUI_PORT}) — killing and retrying."
           kill -9 "$BACKEND_PID" 2>/dev/null || true
         fi
       ) &
@@ -429,6 +501,7 @@ run_stack() {
       ( "${WINE_BIN%64}server" -k 2>/dev/null || wineserver -k 2>/dev/null ) || true
       sleep 3
     done ) &
+  BACKEND_LOOP_PID=$!
 
   wait
 }

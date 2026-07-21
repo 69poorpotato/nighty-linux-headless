@@ -366,7 +366,7 @@ def _boot_gen():
     if not p:
         return 0
     try:
-        return open(p, encoding="utf-8", errors="replace").read().count("CTL server up")
+        return _read_backend_log_tail(p).count("CTL server up")
     except Exception:
         return 0
 
@@ -390,7 +390,7 @@ def _bot_link_probe(prev_gen):
     if not p:
         return "booting"
     try:
-        lines = open(p, encoding="utf-8", errors="replace").read().splitlines()
+        lines = _read_backend_log_tail(p).splitlines()
     except Exception:
         lines = []
     idxs = [i for i, ln in enumerate(lines) if "CTL server up" in ln]
@@ -732,6 +732,27 @@ def _backend_log_path():
     return os.path.join(nh, "backend.log") if nh else None
 
 
+def _read_backend_log_tail(path, max_bytes=None):
+    """Read a bounded tail from Nighty's append-only backend log.
+
+    The log can grow to tens of megabytes. Reading it in full every five seconds
+    made bridge state checks hit the SD card and allocate large strings. A few
+    MiB contains many complete boot segments while bounding both I/O and memory.
+    """
+    if max_bytes is None:
+        max_bytes = int(os.environ.get("BACKEND_LOG_SCAN_BYTES", str(4 * 1024 * 1024)))
+    with open(path, "rb") as stream:
+        stream.seek(0, os.SEEK_END)
+        size = stream.tell()
+        offset = max(0, size - max_bytes)
+        stream.seek(offset)
+        raw = stream.read()
+    if offset:
+        split = raw.find(b"\n")
+        raw = raw[split + 1:] if split >= 0 else b""
+    return raw.decode("utf-8", "replace")
+
+
 _link_cache = {"t": 0.0, "v": None}
 
 
@@ -759,7 +780,7 @@ def bot_link_status():
     p = _backend_log_path()
     if p and os.path.exists(p):
         try:
-            lines = open(p, encoding="utf-8", errors="replace").read().splitlines()
+            lines = _read_backend_log_tail(p).splitlines()
         except Exception:
             lines = []
         start = 0

@@ -324,6 +324,13 @@ tools - `uv`, Box64, distro Wine - are always left in place.)
   instantly (`BLOCK_LRCLIB=1`), `run.sh` applies faster Box64 dynarec tuning, and
   config enforcement disables the Rich-Presence status rotator. If you still see
   it, confirm the `/etc/hosts` entry exists and that you restarted the stack.
+  On ARM, `NIGHTY_BOX64_PROFILE=balanced` speeds up the main Wine/Python process
+  while `config/box64-nighty.rc` keeps `tls-client-64.dll` on strict settings.
+  Set it back to `safe` for an immediate compatibility rollback.
+- **The loading screen remains after the stub starts** - the second-stage
+  watchdog waits for the real Web UI port. If a transient Discord/Cloudflare
+  error leaves the backend half-started, it restarts the backend after
+  `WEBUI_BOOT_TIMEOUT` instead of waiting forever.
 - **A Rich-Presence preset can crash the backend under emulation** - on emulated
   (non-x86) hosts, running an **RPC** preset makes Nighty fetch image assets
   through the bundled Go `tls-client`, whose JSON handling **intermittently

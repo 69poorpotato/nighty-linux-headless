@@ -1,0 +1,8 @@
+# Nighty-wide values come from NIGHTY_BOX64_PROFILE in scripts/run.sh.
+# Keep the bundled Go TLS client on the strict profile that was proven stable;
+# Box64 supports per-file overrides for Windows DLLs using the /name syntax.
+[/tls-client-64.dll]
+BOX64_DYNAREC_BIGBLOCK=0
+BOX64_DYNAREC_STRONGMEM=3
+BOX64_DYNAREC_SAFEFLAGS=2
+BOX64_DYNAREC_CALLRET=0
