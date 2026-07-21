@@ -5,6 +5,7 @@ from pathlib import Path
 import struct
 import tempfile
 import unittest
+from unittest import mock
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -53,6 +54,18 @@ class PeValidationTests(unittest.TestCase):
             exe = Path(tmp) / "Nighty.exe"
             write_pe(exe, 0x1234)
             self.assertEqual(PREFLIGHT.check_pe(exe, require_x64=False), 3)
+
+
+class LibraryValidationTests(unittest.TestCase):
+    def test_optional_library_does_not_block_a_working_install(self) -> None:
+        missing = [("xkbregistry", "libxkbregistry0", False)]
+        with mock.patch.object(PREFLIGHT, "missing_native_libs", return_value=missing):
+            self.assertEqual(PREFLIGHT.check_libs(quiet=True), 0)
+
+    def test_required_library_blocks_startup(self) -> None:
+        missing = [("Xcomposite", "libxcomposite1", True)]
+        with mock.patch.object(PREFLIGHT, "missing_native_libs", return_value=missing):
+            self.assertEqual(PREFLIGHT.check_libs(quiet=True), 4)
 
 
 if __name__ == "__main__":

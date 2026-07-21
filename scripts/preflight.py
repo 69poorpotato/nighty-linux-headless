@@ -21,16 +21,18 @@ PE_MACHINES = {
 }
 
 WINE_NATIVE_LIBS = (
-    ("X11", "libx11-6"),
-    ("Xext", "libxext6"),
-    ("Xrender", "libxrender1"),
-    ("Xfixes", "libxfixes3"),
-    ("Xrandr", "libxrandr2"),
-    ("Xcomposite", "libxcomposite1"),
-    ("Xi", "libxi6"),
-    ("Xcursor", "libxcursor1"),
-    ("Xinerama", "libxinerama1"),
-    ("xkbregistry", "libxkbregistry0"),
+    ("X11", "libx11-6", True),
+    ("Xext", "libxext6", True),
+    ("Xrender", "libxrender1", True),
+    ("Xfixes", "libxfixes3", True),
+    ("Xrandr", "libxrandr2", True),
+    ("Xcomposite", "libxcomposite1", True),
+    ("Xi", "libxi6", True),
+    ("Xcursor", "libxcursor1", True),
+    ("Xinerama", "libxinerama1", True),
+    # Qt may probe this helper, but the existing RPi5 deployment is healthy
+    # without it. Keep it visible in diagnostics without blocking upgrades.
+    ("xkbregistry", "libxkbregistry0", False),
 )
 
 
@@ -79,17 +81,17 @@ def check_pe(path: Path, require_x64: bool) -> int:
     return 0
 
 
-def missing_native_libs() -> List[Tuple[str, str]]:
-    missing: List[Tuple[str, str]] = []
-    for library, package in WINE_NATIVE_LIBS:
+def missing_native_libs() -> List[Tuple[str, str, bool]]:
+    missing: List[Tuple[str, str, bool]] = []
+    for library, package, required in WINE_NATIVE_LIBS:
         candidate = ctypes.util.find_library(library)
         if not candidate:
-            missing.append((library, package))
+            missing.append((library, package, required))
             continue
         try:
             ctypes.CDLL(candidate)
         except OSError:
-            missing.append((library, package))
+            missing.append((library, package, required))
     return missing
 
 
@@ -99,11 +101,17 @@ def check_libs(quiet: bool) -> int:
         if not quiet:
             print("[preflight] native Wine/X11 libraries: OK")
         return 0
-    if not quiet:
+    required_missing = [item for item in missing if item[2]]
+    optional_missing = [item for item in missing if not item[2]]
+    if required_missing and not quiet:
         print("[preflight] missing native libraries required by Wine/Box64:", file=sys.stderr)
-        for library, package in missing:
+        for library, package, _required in required_missing:
             print(f"  {library} (Debian package: {package})", file=sys.stderr)
-    return 4
+    if optional_missing and not quiet:
+        print("[preflight] optional native libraries not present (startup may still work):", file=sys.stderr)
+        for library, package, _required in optional_missing:
+            print(f"  {library} (Debian package: {package})", file=sys.stderr)
+    return 4 if required_missing else 0
 
 
 def resolve_command(value: str) -> Optional[Path]:
