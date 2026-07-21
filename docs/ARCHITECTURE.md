@@ -87,6 +87,13 @@ of persistence:
 - **systemd** (`nighty.service`, `Restart=always`) supervises `run.sh --run`
   itself and brings the whole stack back after a crash or a reboot.
 
+Before any component starts, `run.sh` acquires a lock in `$NIGHTY_HOME`. A second
+invocation probes the existing bridge, prints its panel URL, and exits without
+touching the live processes. A process/bridge migration probe protects instances
+started by older releases which do not yet hold the lock. Exit status 23 tells
+systemd that a duplicate was intentionally refused and must not enter a restart
+loop.
+
 ### 5. LAN bridge (`scripts/bridge.py`)
 
 A thin reverse proxy. Once the native Web UI (`:8090`, loopback) is up, the

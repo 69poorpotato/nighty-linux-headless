@@ -112,6 +112,11 @@ bash scripts/run.sh once        # run in this terminal
 bash scripts/run.sh autostart   # install + enable the systemd service
 ```
 
+Only one stack can own a runtime at a time. If Nighty is already running, another
+`run.sh` invocation exits safely and prints the existing panel URL. It does not
+kill the live process or create another Wine/Xvfb/bridge stack. The guard also
+recognises older running releases which do not yet create the lock file.
+
 > When using the menu, don't background it with `&` - a backgrounded prompt
 > can't read your keypress. Use `run.sh autostart` (or run it in the foreground).
 
@@ -252,6 +257,18 @@ tools - `uv`, Box64, distro Wine - are always left in place.)
   commit them.
 
 ## Troubleshooting
+
+- **"Nighty is already running"** - this is the single-instance guard working.
+  Open the panel URL printed by the command. If the reported process is unhealthy,
+  inspect `systemctl status nighty` and `journalctl -u nighty -f`; do not start a
+  competing copy against the same ports and Wine prefix.
+- **`Bad EXE format` on ARM** - ARM/Box64 requires an x86-64 `PE32+` Nighty.exe.
+  The installer now validates the PE header before repacking and stops with a
+  clear message when a 32-bit or damaged executable is supplied.
+- **Box64 reports missing `libXcomposite`, `libXi`, `libXcursor`, `libXinerama`,
+  or `libxkbregistry`** - re-run `bash scripts/install.sh`. On apt-based systems
+  it installs the missing native Wine/X11 runtime libraries. Other distributions
+  receive a library list without guessed package names.
 
 - **Repack fails / "bad marshal data"** - the repack must run under Python 3.8.
   Let `install.sh` use the `uv`-provided 3.8 interpreter.
