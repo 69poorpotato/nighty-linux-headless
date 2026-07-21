@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
 set -u
 
-ROOT="${NIGHTY_TEST_ROOT:-/home/pi/nighty_test}"
+SCRIPT_DIR="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
+DEFAULT_ROOT="$(dirname -- "$SCRIPT_DIR")"
+ROOT="${NIGHTY_TEST_ROOT:-$DEFAULT_ROOT}"
 SERVICE="${NIGHTY_SERVICE:-nighty.service}"
 
 cd "$ROOT" || exit 2
@@ -21,7 +23,16 @@ echo "SERVICE_PID_AFTER=$after"
 echo "READY_BEFORE=$before_ready"
 echo "READY_AFTER=$after_ready"
 echo "TEST_PROCESSES"
-pgrep -af '/home/pi/nighty_test/scripts/(run|bridge|webui_guard).(sh|py)' || true
+for proc in /proc/[0-9]*; do
+  [ -r "$proc/cmdline" ] || continue
+  while IFS= read -r -d '' arg; do
+    case "$arg" in
+      "$ROOT/scripts/run.sh"|"$ROOT/scripts/bridge.py"|"$ROOT/scripts/webui_guard.py")
+        printf '%s %s\n' "${proc##*/}" "$arg"
+        ;;
+    esac
+  done <"$proc/cmdline" 2>/dev/null
+done
 
 if [ "$rc" -eq 0 ] \
    && [ "$before" = "$after" ] \
