@@ -111,20 +111,34 @@ bridge_port_in_use() {
   (exec 8<>"/dev/tcp/127.0.0.1/${BRIDGE_PORT}") >/dev/null 2>&1
 }
 
+process_is_runner() {
+  local pid="$1" arg=""
+  [ -r "/proc/$pid/cmdline" ] || return 1
+  while IFS= read -r -d '' arg; do
+    case "$arg" in
+      scripts/run.sh|*/scripts/run.sh) return 0 ;;
+    esac
+  done <"/proc/$pid/cmdline" 2>/dev/null
+  return 1
+}
+
 find_existing_runner() {
-  local pid cmd
-  command -v pgrep >/dev/null 2>&1 || return 1
-  for pid in $(pgrep -f '[s]cripts/run.sh' 2>/dev/null || true); do
-    [ "$pid" = "$$" ] && continue
+  local proc pid
+  for proc in /proc/[0-9]*; do
+    [ -d "$proc" ] || continue
+    pid="${proc##*/}"
+    [ "$pid" = "${BASHPID:-$$}" ] && continue
     if is_ancestor_pid "$pid"; then continue; fi
-    cmd="$(tr '\0' ' ' <"/proc/$pid/cmdline" 2>/dev/null || true)"
-    case "$cmd" in *scripts/run.sh*) printf '%s' "$pid"; return 0 ;; esac
+    if process_is_runner "$pid"; then
+      printf '%s' "$pid"
+      return 0
+    fi
   done
   return 1
 }
 
 is_ancestor_pid() {
-  local wanted="$1" current="$$" parent=""
+  local wanted="$1" current="${BASHPID:-$$}" parent=""
   while [ "$current" -gt 1 ] 2>/dev/null; do
     parent="$(awk '/^PPid:/ {print $2}' "/proc/$current/status" 2>/dev/null || true)"
     [ -n "$parent" ] || break
@@ -171,11 +185,10 @@ acquire_instance_lock() {
 
   # Portable fallback for minimal distributions without util-linux/flock.
   if ! mkdir "$_INSTANCE_LOCK_DIR" 2>/dev/null; then
-    local owner="" cmd=""
+    local owner=""
     [ -f "$_INSTANCE_LOCK_DIR/pid" ] && owner="$(cat "$_INSTANCE_LOCK_DIR/pid" 2>/dev/null || true)"
     if [ -n "$owner" ] && kill -0 "$owner" 2>/dev/null; then
-      cmd="$(tr '\0' ' ' <"/proc/$owner/cmdline" 2>/dev/null || true)"
-      case "$cmd" in *scripts/run.sh*) return 23 ;; esac
+      process_is_runner "$owner" && return 23
     fi
     if [ -d "$_INSTANCE_LOCK_DIR" ] && [ ! -L "$_INSTANCE_LOCK_DIR" ]; then
       rm -f "$_INSTANCE_LOCK_DIR/pid" 2>/dev/null || true
