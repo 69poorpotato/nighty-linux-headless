@@ -81,11 +81,15 @@ Re-running the installer is safe: anything already set up is detected and skippe
 
 The easiest way to deploy to a Linux server or VPS is using our one-liner setup script. It automatically installs Docker, fetches the repository, sets up your credentials, and starts the container.
 
-Run the following command on your server:
+Run the following command on your server to download the repository and set your credentials:
 ```bash
 bash <(curl -sL https://raw.githubusercontent.com/glowxx/nighty-linux-headless/main/scripts/docker-install.sh)
 ```
-Follow the interactive on-screen instructions to set your Web UI login and upload your `Nighty.exe`.
+After the script finishes, upload your `Nighty.exe` to the server using an SFTP client (like FileZilla), then start the bot:
+```bash
+cd /root/nighty-linux-headless
+bash scripts/docker-start.sh
+```
 
 ### Method 2: Bare Metal
 

@@ -50,29 +50,8 @@ if [ -f "docker-compose.yml" ]; then
   sed -i "s/WEBUI_PASSWORD=secret/WEBUI_PASSWORD=$WEBUI_PASS/g" docker-compose.yml
 fi
 
-print_header "ACTION REQUIRED"
-printf "%sPlease upload your licensed 'Nighty.exe' to %s%s%s on your VPS.%s\n" "$Y" "$B" "$DIR" "$Y" "$N"
-printf "%s(You can use FileZilla, WinSCP, or your preferred SFTP client)%s\n" "$C" "$N"
-printf "%s%sPress ENTER when you have successfully uploaded Nighty.exe to continue...%s" "$C" "$B" "$N"
-read -r empty_var
-
-if [ ! -f "Nighty.exe" ]; then
-  print_error "Nighty.exe not found in $DIR! Please upload it and run this script again."
-  exit 1
-fi
-print_success "Nighty.exe found!"
-
-# ── Deployment ───────────────────────────────────────────────────────────────
-print_step "Stopping existing containers (if any)..."
-docker compose down 2>/dev/null || true
-
-print_step "Building new Docker image (This WILL take a few minutes, please be patient)..."
-docker compose build -q
-
-print_step "Starting new container in background..."
-docker compose up -d
-
-print_header "DEPLOYMENT FINISHED"
-printf "%s%s✔ Your bot is running securely in the background!%s\n\n" "$G" "$B" "$N"
-printf "To view live logs anytime, run:\n"
-printf "  %scd %s && docker compose logs -f nighty%s\n\n" "$C" "$DIR" "$N"
+print_header "ALMOST DONE - ACTION REQUIRED"
+printf "%s1. Upload your licensed 'Nighty.exe' to %s%s%s on your VPS.%s\n" "$Y" "$B" "$DIR" "$Y" "$N"
+printf "%s   (You can use FileZilla, WinSCP, or your preferred SFTP client)%s\n\n" "$C" "$N"
+printf "%s2. Once uploaded, run the start script:%s\n" "$Y" "$N"
+printf "   %scd %s && bash scripts/docker-start.sh%s\n\n" "$C" "$DIR" "$N"
