@@ -278,6 +278,22 @@ tools - `uv`, Box64, distro Wine - are always left in place.)
   Nighty license key and reconnect.
 - **Backend never opens 8090** - it only starts after a successful login. Open
   the bridge and complete the onboarding flow.
+- **Disk usage grows after repeated backend restarts** - the Windows executable
+  is a PyInstaller one-file bundle. Forced watchdog exits cannot remove its
+  `_MEI*` extraction directory, so `run.sh` now removes stale `_MEI*` directories
+  from Nighty's dedicated Wine Temp folder before launch and after backend exit.
+  To inspect or clean leftovers manually, stop Nighty first, then run:
+
+  ```bash
+  sudo systemctl stop nighty
+  WINEPREFIX="$HOME/.local/share/nighty/prefix" bash scripts/cleanup_mei.sh --dry-run
+  WINEPREFIX="$HOME/.local/share/nighty/prefix" bash scripts/cleanup_mei.sh
+  sudo systemctl start nighty
+  ```
+
+  The helper only considers direct `_MEI*` directories below
+  `drive_c/users/*/AppData/Local/Temp` in the selected prefix. Automatic cleanup
+  can be temporarily disabled with `CLEAN_STALE_MEI=0` in `.env`.
 - **Authorization problems - "asks to authorize", bot disconnected, or stuck on
   the auth screen.** If your bot is not authorized on your Discord account (or you
   disconnected/removed it), Nighty cannot work and the bridge shows an

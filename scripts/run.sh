@@ -40,6 +40,7 @@ set -a; [ -f "$HERE/.env" ] && . "$HERE/.env"; set +a
 # open WEBUI_PORT. A transient Discord/Cloudflare failure can otherwise leave the
 # loading screen alive forever even though the first-stage watchdog has exited.
 : "${WEBUI_BOOT_TIMEOUT:=180}"
+: "${CLEAN_STALE_MEI:=1}"
 mkdir -p "$NIGHTY_HOME"
 
 export WINEPREFIX
@@ -313,6 +314,15 @@ GUARD_PID=""
 BRIDGE_LOOP_PID=""
 BACKEND_LOOP_PID=""
 
+cleanup_pyinstaller_temp() {
+  [ "$CLEAN_STALE_MEI" = 1 ] || return 0
+  # PyInstaller normally removes _MEI* on a clean Windows exit. Watchdog
+  # SIGKILLs and Wine shutdowns cannot run that cleanup, so remove leftovers
+  # externally while no Nighty backend is using this dedicated prefix.
+  WINEPREFIX="$WINEPREFIX" bash "$HERE/scripts/cleanup_mei.sh" ||
+    log "WARNING: stale PyInstaller temp cleanup did not complete."
+}
+
 terminate_pid() {
   local pid="${1:-}"
   [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null || return 0
@@ -350,6 +360,7 @@ cleanup() {
   kill_process_with_arg "$HERE/scripts/bridge.py"
   kill_process_with_arg "$HERE/scripts/webui_guard.py"
   ( "${WINE_BIN%64}server" -k 2>/dev/null || wineserver -k 2>/dev/null ) || true
+  cleanup_pyinstaller_temp
   terminate_pid "$XVFB_PID"
   release_instance_guard
 }
@@ -380,6 +391,9 @@ run_stack() {
       return 1
     }
   fi
+  # The instance guard is held and Wine has not been launched yet, so all
+  # matching PyInstaller extraction directories in this prefix are stale.
+  cleanup_pyinstaller_temp
   case "$(uname -m)" in
     x86_64|amd64) : ;;
     *) python3 "$HERE/scripts/preflight.py" libs --quiet || {
@@ -499,6 +513,7 @@ run_stack() {
       kill "$WATCHDOG_PID" 2>/dev/null || true
       log "backend exited — relaunching in 3s (persistence)."
       ( "${WINE_BIN%64}server" -k 2>/dev/null || wineserver -k 2>/dev/null ) || true
+      cleanup_pyinstaller_temp
       sleep 3
     done ) &
   BACKEND_LOOP_PID=$!
