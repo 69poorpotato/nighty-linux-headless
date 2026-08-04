@@ -1,0 +1,25 @@
+services:
+  nighty:
+    build: .
+    image: nighty-linux-headless:latest
+    container_name: nighty
+    restart: unless-stopped
+    ports:
+      - "8088:8088"
+    environment:
+      # Set your desired Web UI credentials
+      - WEBUI_USERNAME=admin
+      - WEBUI_PASSWORD=secret
+      # The timezone for your container
+      - TZ=UTC
+    volumes:
+      # Mount your Nighty.exe (read-only)
+      - ./Nighty.exe:/app/Nighty.exe:ro
+      # Persist configuration and prefixes
+      - ./data:/data
+    # Extra hosts handles the RP-fetch blackholing directly via Docker
+    # This ensures lrclib.net doesn't freeze the bot under emulation
+    extra_hosts:
+      - "lrclib.net:0.0.0.0"
+      - "api.lrclib.net:0.0.0.0"
+      - "api.spotify.com:0.0.0.0"

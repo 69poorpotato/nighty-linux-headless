@@ -47,6 +47,7 @@ Full details in [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
   is disabled before each launch.
 - **Persistence** - `run.sh` relaunches the backend on restart/close, and systemd
   supervises everything (survives crashes and reboots).
+- **Docker Support** - deploy effortlessly on any Linux server without polluting your host with Wine or Xvfb.
 
 ## Requirements
 
@@ -75,6 +76,18 @@ missing**:
 Re-running the installer is safe: anything already set up is detected and skipped.
 
 ## Quick start
+
+### Method 1: Docker (Recommended)
+
+The easiest way to deploy to a Linux server or VPS is using our one-liner setup script. It automatically installs Docker, fetches the repository, sets up your credentials, and starts the container.
+
+Run the following command on your server:
+```bash
+bash <(curl -sL https://raw.githubusercontent.com/glowxx/nighty-linux-headless/main/scripts/docker-install.sh)
+```
+Follow the interactive on-screen instructions to set your Web UI login and upload your `Nighty.exe`.
+
+### Method 2: Bare Metal
 
 ```bash
 git clone <your-fork-url> nighty-linux-headless
