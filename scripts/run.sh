@@ -27,6 +27,7 @@ set -a; [ -f "$HERE/.env" ] && . "$HERE/.env"; set +a
 : "${DISPLAY_NUM:=99}"
 : "${STUB_PORT:=8765}"
 : "${BRIDGE_PORT:=8088}"
+: "${WEBUI_PORT:=8090}"
 : "${ENFORCE_WEBUI:=1}"
 : "${NIGHTY_SINGLE_INSTANCE:=enforce}"
 : "${NIGHTY_INSTANCE_LOCK:=$NIGHTY_HOME/run.lock}"

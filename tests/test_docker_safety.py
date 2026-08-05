@@ -32,6 +32,10 @@ class DockerSafetyTests(unittest.TestCase):
         self.assertIn('NIGHTY_WINE_COMMAND=("$box64_bin" "$wine_bin")', launcher)
         self.assertIn('"${NIGHTY_WINE_COMMAND[@]}" "$NIGHTY_STUB"', run_script)
 
+    def test_runtime_has_a_webui_port_default_without_env_file(self) -> None:
+        run_script = (ROOT / "scripts" / "run.sh").read_text(encoding="utf-8")
+        self.assertIn(': "${WEBUI_PORT:=8090}"', run_script)
+
 
 if __name__ == "__main__":
     unittest.main()
