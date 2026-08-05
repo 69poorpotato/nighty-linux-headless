@@ -65,7 +65,7 @@ RUN mkdir -p /data/nighty && \
     chown -R nighty:nighty /app /data
 
 # Default environment variables
-ENV WEBUI_HOST=0.0.0.0 \
+ENV WEBUI_HOST=127.0.0.1 \
     BRIDGE_HOST=0.0.0.0
 
 USER nighty

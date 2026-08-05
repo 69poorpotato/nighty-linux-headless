@@ -36,6 +36,12 @@ class DockerSafetyTests(unittest.TestCase):
         run_script = (ROOT / "scripts" / "run.sh").read_text(encoding="utf-8")
         self.assertIn(': "${WEBUI_PORT:=8090}"', run_script)
 
+    def test_native_webui_stays_private_behind_the_bridge(self) -> None:
+        dockerfile = (ROOT / "Dockerfile").read_text(encoding="utf-8")
+        self.assertIn("ENV WEBUI_HOST=127.0.0.1", dockerfile)
+        self.assertIn("BRIDGE_HOST=0.0.0.0", dockerfile)
+        self.assertNotIn("ENV WEBUI_HOST=0.0.0.0", dockerfile)
+
     def test_box64_build_is_pinned_to_the_validated_revision(self) -> None:
         dockerfile = (ROOT / "Dockerfile").read_text(encoding="utf-8")
         self.assertIn("c01888938978d85938205ac761327081d58d6ffd", dockerfile)
