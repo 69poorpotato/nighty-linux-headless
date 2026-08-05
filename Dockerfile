@@ -4,7 +4,9 @@ FROM ubuntu:24.04
 ARG TARGETARCH
 ARG PUID=1000
 ARG PGID=1000
-ARG BOX64_VERSION=v0.4.2
+# Pin the exact Box64 revision validated with Nighty on Raspberry Pi 5. Using a
+# commit SHA keeps builds reproducible while avoiding the v0.4.2 Wine regression.
+ARG BOX64_VERSION=c01888938978d85938205ac761327081d58d6ffd
 
 ENV DEBIAN_FRONTEND=noninteractive
 
@@ -20,13 +22,15 @@ RUN set -eux; \
       libx11-6 libxext6 libxrender1 libxfixes3 libxrandr2 libxcomposite1 \
       libxi6 libxcursor1 libxinerama1 libxkbregistry0 libsdl2-2.0-0; \
     if [ "$arch" = arm64 ]; then \
-      apt-get install -y --no-install-recommends build-essential cmake git; \
-      git clone --depth 1 --branch "$BOX64_VERSION" https://github.com/ptitSeb/box64 /tmp/box64; \
+      apt-get install -y --no-install-recommends build-essential cmake; \
+      mkdir -p /tmp/box64; \
+      curl -fSL --retry 3 "https://github.com/ptitSeb/box64/archive/${BOX64_VERSION}.tar.gz" \
+        | tar -xz -C /tmp/box64 --strip-components=1; \
       cmake -S /tmp/box64 -B /tmp/box64/build -DARM_DYNAREC=ON -DCMAKE_BUILD_TYPE=Release; \
       cmake --build /tmp/box64/build --parallel "$(nproc)"; \
       cmake --install /tmp/box64/build; \
       test -x /usr/local/bin/box64; \
-      apt-get purge -y --auto-remove build-essential cmake git; \
+      apt-get purge -y --auto-remove build-essential cmake; \
       rm -rf /tmp/box64; \
     fi; \
     rm -rf /var/lib/apt/lists/*
