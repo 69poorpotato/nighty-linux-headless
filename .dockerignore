@@ -1,0 +1,10 @@
+# Keep the Docker build context deliberately small. The licensed executable,
+# runtime data, credentials, logs and local Git metadata must never enter an
+# image layer.
+*
+!.env.example
+!config/
+!config/**
+!scripts/
+!scripts/**
+

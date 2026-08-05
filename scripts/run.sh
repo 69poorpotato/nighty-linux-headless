@@ -14,6 +14,7 @@
 # ─────────────────────────────────────────────────────────────────────────────
 set -uo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+. "$HERE/scripts/wine_command.sh"
 
 # ── load .env ────────────────────────────────────────────────────────────────
 set -a; [ -f "$HERE/.env" ] && . "$HERE/.env"; set +a
@@ -359,7 +360,7 @@ cleanup() {
   # Match real argv entries, not arbitrary command-line text from an SSH script.
   kill_process_with_arg "$HERE/scripts/bridge.py"
   kill_process_with_arg "$HERE/scripts/webui_guard.py"
-  ( "${WINE_BIN%64}server" -k 2>/dev/null || wineserver -k 2>/dev/null ) || true
+  nighty_stop_wineserver
   cleanup_pyinstaller_temp
   terminate_pid "$XVFB_PID"
   release_instance_guard
@@ -391,6 +392,7 @@ run_stack() {
       return 1
     }
   fi
+  nighty_configure_wine_command "$WINE_BIN" "$(uname -m)" || return 1
   # The instance guard is held and Wine has not been launched yet, so all
   # matching PyInstaller extraction directories in this prefix are stale.
   cleanup_pyinstaller_temp
@@ -468,7 +470,7 @@ run_stack() {
   ( while true; do
       python3 "$HERE/scripts/enforce_config.py" >/dev/null 2>&1 || true
       log "launching backend ($NIGHTY_STUB)…"
-      "$WINE_BIN" "$NIGHTY_STUB" >>"$NIGHTY_HOME/backend.log" 2>&1 &
+      "${NIGHTY_WINE_COMMAND[@]}" "$NIGHTY_STUB" >>"$NIGHTY_HOME/backend.log" 2>&1 &
       BACKEND_PID=$!
 
       (
@@ -512,7 +514,7 @@ run_stack() {
       wait "$BACKEND_PID" 2>/dev/null || true
       kill "$WATCHDOG_PID" 2>/dev/null || true
       log "backend exited — relaunching in 3s (persistence)."
-      ( "${WINE_BIN%64}server" -k 2>/dev/null || wineserver -k 2>/dev/null ) || true
+      nighty_stop_wineserver
       cleanup_pyinstaller_temp
       sleep 3
     done ) &

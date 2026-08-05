@@ -1,30 +1,53 @@
+FROM ghcr.io/astral-sh/uv:0.12.1 AS uv
 FROM ubuntu:24.04
 
-# Prevent interactive prompts during apt installations
-ENV DEBIAN_FRONTEND=noninteractive \
-    PUID=1000 \
-    PGID=1000
+ARG TARGETARCH
+ARG PUID=1000
+ARG PGID=1000
+ARG BOX64_VERSION=v0.4.2
 
-# Install base dependencies required by install.sh and run.sh
-# Ubuntu 24.04 provides Wine 9.0 by default, which install.sh will detect as <10
-# and it will automatically fall back to downloading static Wine 10 on first run.
-RUN apt-get update && apt-get install -y \
-    curl wget tar xz-utils gnupg sudo \
-    python3 xvfb \
-    wine64 wine \
-    && rm -rf /var/lib/apt/lists/*
+ENV DEBIAN_FRONTEND=noninteractive
+
+# Install the runtime dependencies for both supported image architectures.
+# On arm64 Box64 is compiled once into the image; it is never rebuilt while the
+# user is waiting for the container to start.
+RUN set -eux; \
+    arch="${TARGETARCH:-$(dpkg --print-architecture)}"; \
+    case "$arch" in amd64|arm64) ;; *) echo "Unsupported Docker architecture: $arch" >&2; exit 1 ;; esac; \
+    apt-get update; \
+    apt-get install -y --no-install-recommends \
+      ca-certificates curl wget tar xz-utils sudo python3 xvfb wine64 wine \
+      libx11-6 libxext6 libxrender1 libxfixes3 libxrandr2 libxcomposite1 \
+      libxi6 libxcursor1 libxinerama1 libxkbregistry0 libsdl2-2.0-0; \
+    if [ "$arch" = arm64 ]; then \
+      apt-get install -y --no-install-recommends build-essential cmake git; \
+      git clone --depth 1 --branch "$BOX64_VERSION" https://github.com/ptitSeb/box64 /tmp/box64; \
+      cmake -S /tmp/box64 -B /tmp/box64/build -DARM_DYNAREC=ON -DCMAKE_BUILD_TYPE=Release; \
+      cmake --build /tmp/box64/build --parallel "$(nproc)"; \
+      cmake --install /tmp/box64/build; \
+      test -x /usr/local/bin/box64; \
+      apt-get purge -y --auto-remove build-essential cmake git; \
+      rm -rf /tmp/box64; \
+    fi; \
+    rm -rf /var/lib/apt/lists/*
+
+COPY --from=uv /uv /uvx /usr/local/bin/
 
 # Create a dedicated user for running Nighty
 # Ubuntu 24.04 pre-creates an 'ubuntu' user with UID/GID 1000. We remove it so we can use 1000.
 # Passwordless sudo is required because install.sh modifies /etc/hosts for RP-fetch blackholing
-RUN userdel -r ubuntu 2>/dev/null || true && \
-    groupadd -g ${PGID} nighty && \
-    useradd -u ${PUID} -g ${PGID} -m -s /bin/bash nighty && \
+RUN set -eux; \
+    test "$PUID" -gt 0; test "$PGID" -gt 0; \
+    userdel -r ubuntu 2>/dev/null || true; \
+    groupadd -g "$PGID" nighty; \
+    useradd -u "$PUID" -g "$PGID" -m -s /bin/bash nighty; \
     echo "nighty ALL=(ALL) NOPASSWD: ALL" > /etc/sudoers.d/nighty
 
 # Setup directories
 WORKDIR /app
-COPY . /app
+COPY --chown=nighty:nighty scripts/ /app/scripts/
+COPY --chown=nighty:nighty config/ /app/config/
+COPY --chown=nighty:nighty .env.example /app/.env.example
 
 RUN mkdir -p /data/nighty && \
     chown -R nighty:nighty /app /data
@@ -39,5 +62,8 @@ USER nighty
 VOLUME ["/data"]
 
 EXPOSE 8088
+
+HEALTHCHECK --interval=15s --timeout=5s --start-period=360s --retries=4 \
+  CMD curl -fsS http://127.0.0.1:8088/ready | grep -q '"ready": true' || exit 1
 
 CMD ["bash", "scripts/docker-entrypoint.sh"]

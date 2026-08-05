@@ -7,10 +7,12 @@ Nighty_stub.exe
 .env
 *.local
 secrets.*
+docker-secrets/
 
 # ─── Wine prefix, runtime data, logs ───
 prefix/
 drive_c/
+data/
 *.log
 stub_webview.log
 

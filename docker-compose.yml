@@ -1,17 +1,25 @@
 services:
   nighty:
-    build: .
+    build:
+      context: .
+      args:
+        PUID: "${PUID:-1000}"
+        PGID: "${PGID:-1000}"
     image: nighty-linux-headless:latest
     container_name: nighty
     restart: unless-stopped
+    init: true
+    stop_grace_period: 30s
     ports:
       - "8088:8088"
     environment:
-      # Set your desired Web UI credentials
-      - WEBUI_USERNAME=admin
-      - WEBUI_PASSWORD=secret
-      # The timezone for your container
-      - TZ=UTC
+      TZ: "${TZ:-UTC}"
+      PUID: "${PUID:-1000}"
+      PGID: "${PGID:-1000}"
+      NIGHTY_BOX64_PROFILE: "${NIGHTY_BOX64_PROFILE:-balanced}"
+    secrets:
+      - webui_username
+      - webui_password
     volumes:
       # Mount your Nighty.exe (read-only)
       - ./Nighty.exe:/app/Nighty.exe:ro
@@ -23,3 +31,9 @@ services:
       - "lrclib.net:0.0.0.0"
       - "api.lrclib.net:0.0.0.0"
       - "api.spotify.com:0.0.0.0"
+
+secrets:
+  webui_username:
+    file: ./docker-secrets/webui_username
+  webui_password:
+    file: ./docker-secrets/webui_password

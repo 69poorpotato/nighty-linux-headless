@@ -79,7 +79,15 @@ Re-running the installer is safe: anything already set up is detected and skippe
 
 ### Method 1: Docker (Recommended)
 
-The easiest way to deploy to a Linux server or VPS is using our one-liner setup script. It automatically installs Docker, fetches the repository, sets up your credentials, and starts the container.
+Docker Compose is supported on **x86-64 (`amd64`)** and **64-bit ARM
+(`arm64`, including Raspberry Pi 5)**. The image builds the required Box64
+emulator once on ARM; container startup does not compile it again. Your licensed
+binary, runtime data and Web UI credentials are bind-mounted or provided as
+Docker secrets and are never copied into an image layer.
+
+The easiest deployment method is the setup script. It installs Docker when
+needed, fetches the repository and stores the Web UI login in local secret files
+with restrictive permissions.
 
 Run the following command on your server to download the repository and set your credentials:
 ```bash
@@ -87,9 +95,24 @@ bash <(curl -sL https://raw.githubusercontent.com/glowxx/nighty-linux-headless/m
 ```
 After the script finishes, upload your `Nighty.exe` to the server using an SFTP client (like FileZilla), then start the bot:
 ```bash
-cd /root/nighty-linux-headless
+cd "$HOME/nighty-linux-headless"
 bash scripts/docker-start.sh
 ```
+
+The start script asks for credentials if `docker-secrets/` is not configured,
+matches the image user to the current Linux account, builds the image and starts
+the container. Passwords shorter than eight characters and known example
+passwords are rejected. To verify startup:
+
+```bash
+docker compose ps
+curl http://127.0.0.1:8088/ready
+# Expected after boot: {"ready": true}
+```
+
+The Docker build context is allow-listed by `.dockerignore`; `Nighty.exe`,
+`Nighty_stub.exe`, `.env`, `data/`, logs, credentials and Git metadata cannot be
+added to the image by `COPY`.
 
 ### Method 2: Bare Metal
 
