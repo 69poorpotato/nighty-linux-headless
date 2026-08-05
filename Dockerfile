@@ -35,6 +35,14 @@ RUN set -eux; \
     fi; \
     rm -rf /var/lib/apt/lists/*
 
+# Host-level binfmt registrations commonly point to /usr/bin/box64. Wine starts
+# x86-64 child processes after the explicitly wrapped launcher, so keep that
+# conventional path available inside ARM64 containers as well.
+RUN if [ -x /usr/local/bin/box64 ]; then \
+      ln -sf /usr/local/bin/box64 /usr/bin/box64; \
+      test -x /usr/bin/box64; \
+    fi
+
 COPY --from=uv /uv /uvx /usr/local/bin/
 
 # Create a dedicated user for running Nighty

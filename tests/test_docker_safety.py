@@ -41,6 +41,11 @@ class DockerSafetyTests(unittest.TestCase):
         self.assertIn("c01888938978d85938205ac761327081d58d6ffd", dockerfile)
         self.assertIn("box64/archive/${BOX64_VERSION}.tar.gz", dockerfile)
 
+    def test_box64_is_available_at_the_host_binfmt_path(self) -> None:
+        dockerfile = (ROOT / "Dockerfile").read_text(encoding="utf-8")
+        self.assertIn("ln -sf /usr/local/bin/box64 /usr/bin/box64", dockerfile)
+        self.assertIn("test -x /usr/bin/box64", dockerfile)
+
 
 if __name__ == "__main__":
     unittest.main()
