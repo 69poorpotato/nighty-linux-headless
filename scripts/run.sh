@@ -469,7 +469,9 @@ run_stack() {
   # within BOOT_TIMEOUT — some Wine builds stall during first-prefix init
   # with no error, well before Nighty's own code would ever hang or crash.
   ( while true; do
+      python3 "$HERE/scripts/rotate_logs.py" >/dev/null 2>&1 || true
       python3 "$HERE/scripts/enforce_config.py" >/dev/null 2>&1 || true
+      mkdir -p "$HERE/dist/ws_extensions" "$NIGHTY_HOME/dist/ws_extensions" 2>/dev/null || true
       log "launching backend ($NIGHTY_STUB)…"
       "${NIGHTY_WINE_COMMAND[@]}" "$NIGHTY_STUB" >>"$NIGHTY_HOME/backend.log" 2>&1 &
       BACKEND_PID=$!
@@ -506,7 +508,9 @@ run_stack() {
           web_waited=$((web_waited + 5))
         done
         if kill -0 "$BACKEND_PID" 2>/dev/null; then
-          log "backend panel timed out after ${WEBUI_BOOT_TIMEOUT}s (stub is up but Web UI never answered on :${WEBUI_PORT}) — killing and retrying."
+          log "backend panel timed out after ${WEBUI_BOOT_TIMEOUT}s (stub is up but Web UI never answered on :${WEBUI_PORT}). Running network diagnostics..."
+          python3 "$HERE/scripts/preflight.py" diag >>"$NIGHTY_HOME/backend.log" 2>&1 || true
+          log "killing unresponsive backend and retrying."
           kill -9 "$BACKEND_PID" 2>/dev/null || true
         fi
       ) &
@@ -532,6 +536,7 @@ Usage: bash scripts/run.sh [COMMAND]
 Commands:
   once        Start the whole stack now, in this terminal (Ctrl+C to stop).
   autostart   Install + enable a systemd service so it starts on every boot.
+  diag        Run environment and network diagnostics.
   --run       Same as 'once' (this is what the systemd service uses).
   help        Show this help.
 
@@ -544,6 +549,7 @@ EOF
 case "${1:-}" in
   once|--run|run|--service) run_stack "${1:-}"; exit $? ;;
   autostart|--autostart)    setup_autostart; exit $? ;;
+  diag|--diag)              bash "$HERE/scripts/diag.sh"; exit $? ;;
   -h|--help|help)           usage; exit 0 ;;
   "")                       : ;;   # no command → interactive menu below
   *) echo "Unknown command: $1" >&2; usage >&2; exit 1 ;;

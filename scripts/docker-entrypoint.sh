@@ -35,6 +35,9 @@ fi
 export NIGHTY_EXE="${NIGHTY_EXE:-/app/Nighty.exe}"
 export NIGHTY_HOME="${NIGHTY_HOME:-/data/nighty}"
 export WINEPREFIX="${WINEPREFIX:-$NIGHTY_HOME/prefix}"
+export PYTHONIOENCODING="${PYTHONIOENCODING:-utf-8}"
+export SSL_CERT_FILE="${SSL_CERT_FILE:-/etc/ssl/certs/ca-certificates.crt}"
+export SSL_CERT_DIR="${SSL_CERT_DIR:-/etc/ssl/certs}"
 
 # Check if the executable is mounted
 if [ ! -f "$NIGHTY_EXE" ]; then
@@ -48,6 +51,9 @@ echo "=== Running pre-flight setup (install.sh) ==="
 # install.sh handles missing deps, repacking, and /etc/hosts modifications.
 # It automatically uses sudo when necessary (e.g. for /etc/hosts).
 bash scripts/install.sh
+
+# Ensure backend dist extension directories exist and are writable
+mkdir -p /app/dist/ws_extensions "$NIGHTY_HOME/dist/ws_extensions" 2>/dev/null || true
 
 echo "=== Setup complete, starting orchestrator ==="
 exec bash scripts/run.sh once
