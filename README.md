@@ -202,6 +202,14 @@ account) before restarting Nighty. Ctrl+C cancels and restores the panel.
 
 After that the native Web UI loads.
 
+## Updating Nighty
+
+If new fixes or features are pushed to this repository, you can update your deployment instantly without losing any data. This seamlessly detects if you are using Docker or Bare Metal, pulls the latest changes, updates any dependencies, and restarts your bot.
+
+```bash
+bash <(curl -sL https://raw.githubusercontent.com/glowxx/nighty-linux-headless/main/scripts/update.sh)
+```
+
 ## Configuration
 
 All settings live in `.env` (copy from `.env.example`). Key ones:
