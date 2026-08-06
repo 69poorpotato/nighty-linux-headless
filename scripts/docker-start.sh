@@ -53,6 +53,9 @@ else
   export PUID="${PUID:-$(id -u)}" PGID="${PGID:-$(id -g)}"
 fi
 
+# Ensure the container user can read the secrets
+chown -R "$PUID:$PGID" docker-secrets data 2>/dev/null || true
+
 print_step "Stopping existing containers (if any)..."
 docker compose down 2>/dev/null || true
 

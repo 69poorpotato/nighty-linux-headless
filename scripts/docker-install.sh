@@ -63,6 +63,13 @@ mkdir -p docker-secrets
 printf '%s\n' "$WEBUI_USER" > docker-secrets/webui_username
 printf '%s\n' "$WEBUI_PASS" > docker-secrets/webui_password
 
+if [ "$(id -u)" -eq 0 ]; then
+  PUID="${PUID:-${SUDO_UID:-1000}}" PGID="${PGID:-${SUDO_GID:-1000}}"
+else
+  PUID="${PUID:-$(id -u)}" PGID="${PGID:-$(id -g)}"
+fi
+chown -R "$PUID:$PGID" docker-secrets 2>/dev/null || true
+
 print_header "ALMOST DONE - ACTION REQUIRED"
 printf "%s1. Upload your licensed 'Nighty.exe' to %s%s%s on your server.%s\n" "$Y" "$B" "$DIR" "$Y" "$N"
 printf "%s   (You can use FileZilla, WinSCP, or your preferred SFTP client)%s\n\n" "$C" "$N"
