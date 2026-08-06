@@ -129,10 +129,9 @@ docker_uninstall() {
     fi
   fi
 
-  info "Removing installation directory ($HERE)…"
-  cd "$HOME"
-  rm -rf "$HERE"
-  ok "removed $HERE"
+  info "Removing Docker data and secrets…"
+  rm -rf "$HERE/data" "$HERE/docker-secrets" "$HERE/.env" 2>/dev/null || true
+  ok "removed data and secrets"
 
   echo
   printf '%sDone.%s Uninstallation complete! Your VM is now clean.\n' "$G" "$N"
@@ -196,7 +195,7 @@ reset_config_docker() {
   echo
 
   local AD=""
-  local search_path="$HERE/data/prefix/drive_c/users"
+  local search_path="$HERE/data/nighty/prefix/drive_c/users"
   if [ -d "$search_path" ]; then
     for d in "$search_path"/*/AppData/Roaming/"Nighty Selfbot"; do
       if [ -d "$d" ]; then
@@ -212,7 +211,7 @@ reset_config_docker() {
     rm -f "$AD"/auth.json.bak.* "$AD"/nighty.config.bak.* 2>/dev/null || true
     ok "removed license, tokens and the lockdown marker"
   else
-    warn "could not find Nighty's config dir under $HERE/data/prefix"
+    warn "could not find Nighty's config dir under $HERE/data/nighty/prefix"
     warn "(nothing saved yet) - it will set up fresh on next start."
   fi
 

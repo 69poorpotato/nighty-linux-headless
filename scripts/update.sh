@@ -37,10 +37,20 @@ if ! git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
 fi
 
 info "Pulling latest updates from GitHub..."
-git stash >/dev/null 2>&1 || true
+stashed=0
+if ! git diff --quiet HEAD 2>/dev/null; then
+  git stash >/dev/null 2>&1 || true
+  stashed=1
+fi
+
 if ! git pull origin main; then
     warn "Failed to pull updates from GitHub. Check your network or git status."
+    if [ "$stashed" -eq 1 ]; then git stash pop >/dev/null 2>&1 || true; fi
     exit 1
+fi
+
+if [ "$stashed" -eq 1 ]; then
+  git stash pop >/dev/null 2>&1 || true
 fi
 ok "Repository updated to latest version"
 
@@ -51,11 +61,11 @@ if need docker && [ -f "$HERE/docker-compose.yml" ]; then
 fi
 
 if [ "$is_docker" -eq 1 ]; then
-  info "Detected Docker deployment. Rebuilding and restarting container..."
-  if docker compose up -d --build; then
+  info "Detected Docker deployment. Restarting container with new updates..."
+  if docker compose up -d; then
     ok "Docker container successfully updated and restarted!"
   else
-    warn "Failed to rebuild or restart Docker container."
+    warn "Failed to restart Docker container."
   fi
 else
   info "Detected Bare Metal deployment. Re-running installer for new dependencies..."
