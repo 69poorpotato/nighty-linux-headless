@@ -38,8 +38,10 @@ fi
 
 info "Pulling latest updates from GitHub..."
 stashed=0
-if ! git diff --quiet HEAD 2>/dev/null; then
-  git stash >/dev/null 2>&1 || true
+OLD_STASH="$(git rev-parse -q --verify refs/stash || true)"
+git stash >/dev/null 2>&1 || true
+NEW_STASH="$(git rev-parse -q --verify refs/stash || true)"
+if [ "$OLD_STASH" != "$NEW_STASH" ]; then
   stashed=1
 fi
 
