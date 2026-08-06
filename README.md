@@ -114,6 +114,14 @@ The Docker build context is allow-listed by `.dockerignore`; `Nighty.exe`,
 `Nighty_stub.exe`, `.env`, `data/`, logs, credentials and Git metadata cannot be
 added to the image by `COPY`.
 
+#### Uninstalling Docker Setup
+
+If you need to completely remove the bot and all of its data from your server, you can use the built-in interactive uninstaller:
+```bash
+bash <(curl -sL https://raw.githubusercontent.com/glowxx/nighty-linux-headless/main/scripts/uninstall.sh)
+```
+Select the **Full uninstall (Docker)** option when prompted.
+
 ### Method 2: Bare Metal
 
 ```bash
@@ -194,6 +202,14 @@ account) before restarting Nighty. Ctrl+C cancels and restores the panel.
 
 After that the native Web UI loads.
 
+## Updating Nighty
+
+If new fixes or features are pushed to this repository, you can update your deployment instantly without losing any data. This seamlessly detects if you are using Docker or Bare Metal, pulls the latest changes, updates any dependencies, and restarts your bot.
+
+```bash
+bash <(curl -sL https://raw.githubusercontent.com/glowxx/nighty-linux-headless/main/scripts/update.sh)
+```
+
 ## Configuration
 
 All settings live in `.env` (copy from `.env.example`). Key ones:
@@ -272,19 +288,22 @@ below.
 `scripts/uninstall.sh` opens an interactive menu:
 
 ```bash
-bash scripts/uninstall.sh
-#   [1] Full uninstall        remove everything (service, $NIGHTY_HOME, prefix,
-#                             .env, both binaries) - back to a pre-install state.
-#   [2] Reset configuration   delete only the license, tokens and the lockdown
-#                             marker, then restart Nighty for a fresh setup flow.
-#                             Keeps the binary, service and the rest installed.
-#   [3] Cancel
+bash <(curl -sL https://raw.githubusercontent.com/glowxx/nighty-linux-headless/main/scripts/uninstall.sh)
+
+#  ── Docker Deployments ──────────────────────────────────────
+#  [1] Full uninstall (Docker)      stop containers, wipe volumes, remove directory
+#  [2] Reset configuration (Docker) wipe tokens/license/auth only, then restart container
+#
+#  ── Bare Metal Deployments ──────────────────────────────────
+#  [3] Full uninstall (Bare Metal)  remove everything (binary, service, data, prefix)
+#  [4] Reset configuration (Bare)   wipe tokens/license/auth only, then restart for fresh setup
+#
+#  [5] Cancel
 ```
 
-Use **[2] Reset configuration** to redo onboarding (it is the only supported way
-to unlock and re-run setup). Use **[1] Full uninstall** to remove Nighty entirely;
-afterwards copy your `Nighty.exe` back in and run `scripts/install.sh`. (Shared
-tools - `uv`, Box64, distro Wine - are always left in place.)
+Use the **Reset configuration** option matching your deployment method to redo onboarding (it is the only supported way
+to unlock and re-run setup). Use the **Full uninstall** option to remove Nighty entirely. (Shared
+tools - `uv`, Box64, distro Wine - are always left in place on Bare Metal.)
 
 ## Security notes
 
@@ -342,13 +361,13 @@ tools - `uv`, Box64, distro Wine - are always left in place.)
   stuck after authorizing, **reset the configuration** to redo onboarding cleanly:
 
   ```bash
-  bash scripts/uninstall.sh     # choose [2] Reset configuration
+  bash <(curl -sL https://raw.githubusercontent.com/glowxx/nighty-linux-headless/main/scripts/uninstall.sh)
   ```
 
-  Option [2] deletes only the license, tokens and the lockdown marker, then
-  restarts Nighty so it re-runs Activate -> Sign in -> Connect bot -> Authorize
-  from the start - the binary and service stay installed. (For a complete removal
-  instead, choose [1] Full uninstall.) A user-installable app authorizes with an
+  Select the **Reset configuration** option for your deployment method to safely delete only your license, tokens and the lockdown marker, then
+  restart Nighty so it re-runs Activate -> Sign in -> Connect bot -> Authorize
+  from the start - the system and service stay installed. (For a complete removal
+  instead, choose **Full uninstall**.) A user-installable app authorizes with an
   `integration_type=1&scope=applications.commands` link; a classic app is invited
   to a server.
 - **"some intents are OFF" on the bot step** - your bot application doesn't have
