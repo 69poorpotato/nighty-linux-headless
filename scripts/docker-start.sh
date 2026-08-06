@@ -69,5 +69,6 @@ docker compose up -d
 
 print_header "DEPLOYMENT FINISHED"
 printf "%s%s✔ Your bot is running securely in the background!%s\n\n" "$G" "$B" "$N"
-printf "To view live logs anytime, run:\n"
-printf "  %scd %s && docker compose logs -f nighty%s\n\n" "$C" "$DIR" "$N"
+printf "Starting live log view... (Press Ctrl+C to exit logs anytime without stopping the bot)\n\n"
+sleep 2
+docker compose logs -f nighty

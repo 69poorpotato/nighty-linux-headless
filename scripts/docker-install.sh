@@ -45,16 +45,31 @@ fi
 
 cd "$DIR"
 
-# ── Configuration ────────────────────────────────────────────────────────────
-printf "%s%sEnter desired Web UI Username:%s " "$M" "$B" "$N"
-read -r WEBUI_USER
-printf "%s%sEnter desired Web UI Password:%s " "$M" "$B" "$N"
-read -rs WEBUI_PASS
-printf '\n'
+while true; do
+  printf "%s%sEnter desired Web UI Username:%s " "$M" "$B" "$N"
+  read -r WEBUI_USER
+  if [ -z "$WEBUI_USER" ]; then print_error "Username cannot be empty."; echo; continue; fi
 
-[ -n "$WEBUI_USER" ] || { print_error "Username cannot be empty."; exit 1; }
-[ "${#WEBUI_PASS}" -ge 8 ] || { print_error "Password must contain at least 8 characters."; exit 1; }
-case "$WEBUI_PASS" in secret|change-this-please) print_error "Choose a non-default password."; exit 1 ;; esac
+  printf "%s%sEnter desired Web UI Password:%s " "$M" "$B" "$N"
+  read -rs WEBUI_PASS
+  printf '\n'
+  if [ "${#WEBUI_PASS}" -lt 8 ]; then print_error "Password must contain at least 8 characters."; echo; continue; fi
+  case "$WEBUI_PASS" in secret|change-this-please) print_error "Choose a non-default password."; echo; continue ;; esac
+
+  printf "%s%sConfirm Web UI Password:%s " "$M" "$B" "$N"
+  read -rs WEBUI_PASS_CONFIRM
+  printf '\n'
+
+  if [ "$WEBUI_PASS" = "$WEBUI_PASS_CONFIRM" ]; then
+    printf '\n'
+    break
+  else
+    clear
+    print_header "NIGHTY-LINUX-HEADLESS - DOCKER DEPLOYMENT"
+    print_error "Passwords do not match! Please try again."
+    echo
+  fi
+done
 
 # Store credentials as Compose secrets, never in docker-compose.yml or process
 # arguments. Newlines are intentionally unsupported by Docker secret files.
