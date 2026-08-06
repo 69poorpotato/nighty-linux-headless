@@ -68,7 +68,8 @@ if [ "$(id -u)" -eq 0 ]; then
 else
   PUID="${PUID:-$(id -u)}" PGID="${PGID:-$(id -g)}"
 fi
-chown -R "$PUID:$PGID" docker-secrets 2>/dev/null || true
+chmod 700 docker-secrets
+chmod 644 docker-secrets/* 2>/dev/null || true
 
 print_header "ALMOST DONE - ACTION REQUIRED"
 printf "%s1. Upload your licensed 'Nighty.exe' to %s%s%s on your server.%s\n" "$Y" "$B" "$DIR" "$Y" "$N"
