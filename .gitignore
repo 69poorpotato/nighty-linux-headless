@@ -13,7 +13,7 @@ docker-secrets/
 prefix/
 drive_c/
 data/
-*.log
+*.log*
 stub_webview.log
 
 # ─── Python ───
