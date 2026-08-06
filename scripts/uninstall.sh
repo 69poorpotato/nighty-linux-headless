@@ -3,16 +3,25 @@
 # nighty-linux-headless - uninstaller / reset tool
 #
 #  Interactive menu:
-#    [1] Full uninstall        remove EVERYTHING (service, $NIGHTY_HOME, Wine
-#                              prefix, .env, both binaries) - back to pre-install.
-#    [2] Reset configuration   delete ONLY the config/auth state (license, user
-#                              token, bot token, lockdown marker) and restart so
-#                              Nighty boots into a clean, fresh setup flow. Keeps
-#                              the binary, the systemd service and everything else.
-#    [3] Cancel                do nothing and exit.
+#    [1] Full uninstall (Docker)     stop and remove the Docker containers, volumes,
+#                                    images, and the entire installation directory.
+#    [2] Reset configuration (Docker) delete ONLY the config/auth state inside the Docker
+#                                    volume and restart the container for a fresh setup.
+#    [3] Full uninstall (Bare Metal) remove EVERYTHING (service, $NIGHTY_HOME, Wine
+#                                    prefix, .env, both binaries) - back to pre-install.
+#    [4] Reset configuration (Bare Metal) delete ONLY the config/auth state (license, user
+#                                    token, bot token, lockdown marker) and restart so
+#                                    Nighty boots into a clean, fresh setup flow. Keeps
+#                                    the binary, the systemd service and everything else.
+#    [5] Cancel                      do nothing and exit.
 # ─────────────────────────────────────────────────────────────────────────────
 set -uo pipefail
-HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+
+if [ -n "${BASH_SOURCE[0]:-}" ] && [ "${BASH_SOURCE[0]}" != "bash" ] && [ "${BASH_SOURCE[0]:0:5}" != "/dev/" ]; then
+  HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+else
+  HERE="${NIGHTY_DOCKER_DIR:-$HOME/nighty-linux-headless}"
+fi
 cd "$HERE"
 
 if [ -t 1 ]; then B=$'\033[1m'; G=$'\033[32m'; Y=$'\033[33m'; C=$'\033[36m'; R=$'\033[31m'; N=$'\033[0m'; else B=; G=; Y=; C=; R=; N=; fi
@@ -97,10 +106,42 @@ full_uninstall() {
   echo "To reinstall: copy your Nighty.exe into this folder and run scripts/install.sh"
 }
 
-# ── [2] reset configuration only ─────────────────────────────────────────────
-reset_config() {
+# ── [2] full uninstall (Docker) ──────────────────────────────────────────────
+docker_uninstall() {
+  printf '\n%sFull uninstall (Docker)%s deletes your containers, images, volumes, and the entire bot directory.\n' "$R" "$N"
+  printf 'There is no undo. Continue? [y/N] '
+  read -r reply || reply=""
+  case "$reply" in y|Y|yes|YES) : ;; *) echo "Cancelled."; return 1 ;; esac
+  echo
+
+  if command -v docker >/dev/null 2>&1; then
+    if [ -f "$HERE/docker-compose.yml" ]; then
+      info "Stopping and removing Docker containers, volumes, and images…"
+      cd "$HERE"
+      docker compose down -v --rmi all 2>/dev/null || true
+      ok "docker compose stack destroyed"
+    else
+      info "Trying to stop and remove Docker containers by name…"
+      docker stop nighty 2>/dev/null || true
+      docker rm -v nighty 2>/dev/null || true
+      docker rmi nighty-linux-headless:latest 2>/dev/null || true
+      ok "containers and images removed"
+    fi
+  fi
+
+  info "Removing installation directory ($HERE)…"
+  cd "$HOME"
+  rm -rf "$HERE"
+  ok "removed $HERE"
+
+  echo
+  printf '%sDone.%s Uninstallation complete! Your VM is now clean.\n' "$G" "$N"
+}
+
+# ── [3] reset configuration (Bare Metal) ─────────────────────────────────────
+reset_config_bare_metal() {
   local AD; AD="$(find_appdata || true)"
-  printf '\n%sReset configuration%s deletes your license, account token, bot token and the\n' "$Y" "$N"
+  printf '\n%sReset configuration (Bare Metal)%s deletes your license, account token, bot token and the\n' "$Y" "$N"
   printf 'authorization lock, then restarts Nighty for a fresh setup. The app stays installed.\n'
   printf 'Continue? [y/N] '
   read -r reply || reply=""
@@ -145,19 +186,74 @@ reset_config() {
     "$G" "$N" "${BRIDGE_PORT:-8088}"
 }
 
-# ── menu ─────────────────────────────────────────────────────────────────────
-printf '\n%snighty-linux-headless - uninstaller / reset%s\n\n' "$B" "$N"
-echo "  What would you like to do?"
-echo "    ${B}[1]${N} Full uninstall        remove everything (binary, service, data, prefix)"
-echo "    ${B}[2]${N} Reset configuration   wipe tokens/license/auth only, then restart for fresh setup"
-echo "    ${B}[3]${N} Cancel"
-echo
-printf "  Enter choice [1/2/3]: "
-if ! read -r choice; then choice=3; fi
+# ── [4] reset configuration (Docker) ─────────────────────────────────────────
+reset_config_docker() {
+  printf '\n%sReset configuration (Docker)%s deletes your license, account token, bot token and the\n' "$Y" "$N"
+  printf 'authorization lock, then restarts the container for a fresh setup. The image stays intact.\n'
+  printf 'Continue? [y/N] '
+  read -r reply || reply=""
+  case "$reply" in y|Y|yes|YES) : ;; *) echo "Cancelled."; return 1 ;; esac
+  echo
 
-case "${choice:-3}" in
-  1) full_uninstall ;;
-  2) reset_config ;;
-  3|"") echo "Cancelled - nothing was changed." ;;
+  local AD=""
+  local search_path="$HERE/data/prefix/drive_c/users"
+  if [ -d "$search_path" ]; then
+    for d in "$search_path"/*/AppData/Roaming/"Nighty Selfbot"; do
+      if [ -d "$d" ]; then
+        AD="$d"
+        break
+      fi
+    done
+  fi
+
+  if [ -n "$AD" ] && [ -d "$AD" ]; then
+    info "Clearing config + authorization state…"
+    rm -f "$AD/auth.json" "$AD/nighty.config" "$AD/.setup_locked"
+    rm -f "$AD"/auth.json.bak.* "$AD"/nighty.config.bak.* 2>/dev/null || true
+    ok "removed license, tokens and the lockdown marker"
+  else
+    warn "could not find Nighty's config dir under $HERE/data/prefix"
+    warn "(nothing saved yet) - it will set up fresh on next start."
+  fi
+
+  info "Restarting Docker container so it boots into a fresh setup flow…"
+  if command -v docker >/dev/null 2>&1; then
+    cd "$HERE"
+    docker compose restart nighty 2>/dev/null || docker restart nighty 2>/dev/null || true
+    ok "container restarted"
+  else
+    warn "docker not found"
+  fi
+
+  echo
+  printf '%sDone.%s Open the Web UI ( http://<host-ip>:8088/ ) to set Nighty up again from step 1.\n' "$G" "$N"
+}
+
+# ── menu ─────────────────────────────────────────────────────────────────────
+printf "\n%s%s============================================================%s\n" "$C" "$B" "$N"
+printf " %snighty-linux-headless - uninstaller / reset%s\n" "$B" "$N"
+printf "%s%s============================================================%s\n\n" "$C" "$B" "$N"
+
+echo "  What would you like to do?"
+echo
+echo "    ${C}── Docker Deployments ──────────────────────────────────────${N}"
+echo "    ${B}[1]${N} Full uninstall (Docker)      stop containers, wipe volumes, remove directory"
+echo "    ${B}[2]${N} Reset configuration (Docker) wipe tokens/license/auth only, then restart container"
+echo
+echo "    ${C}── Bare Metal Deployments ──────────────────────────────────${N}"
+echo "    ${B}[3]${N} Full uninstall (Bare Metal)  remove everything (binary, service, data, prefix)"
+echo "    ${B}[4]${N} Reset configuration (Bare)   wipe tokens/license/auth only, then restart for fresh setup"
+echo
+echo "    ${B}[5]${N} Cancel"
+echo
+printf "  Enter choice [1/2/3/4/5]: "
+if ! read -r choice; then choice=5; fi
+
+case "${choice:-5}" in
+  1) docker_uninstall ;;
+  2) reset_config_docker ;;
+  3) full_uninstall ;;
+  4) reset_config_bare_metal ;;
+  5|"") echo "Cancelled - nothing was changed." ;;
   *) echo "Unrecognised choice '$choice' - nothing was changed."; exit 1 ;;
 esac

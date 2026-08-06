@@ -114,6 +114,14 @@ The Docker build context is allow-listed by `.dockerignore`; `Nighty.exe`,
 `Nighty_stub.exe`, `.env`, `data/`, logs, credentials and Git metadata cannot be
 added to the image by `COPY`.
 
+#### Uninstalling Docker Setup
+
+If you need to completely remove the bot and all of its data from your server, you can use the built-in interactive uninstaller:
+```bash
+bash <(curl -sL https://raw.githubusercontent.com/glowxx/nighty-linux-headless/main/scripts/uninstall.sh)
+```
+Select the **Full uninstall (Docker)** option when prompted.
+
 ### Method 2: Bare Metal
 
 ```bash
