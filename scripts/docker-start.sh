@@ -53,6 +53,11 @@ else
   export PUID="${PUID:-$(id -u)}" PGID="${PGID:-$(id -g)}"
 fi
 
+# Ensure the container user can read the secrets regardless of UID
+chmod 700 docker-secrets
+chmod 644 docker-secrets/* 2>/dev/null || true
+chown -R "$PUID:$PGID" data 2>/dev/null || true
+
 print_step "Stopping existing containers (if any)..."
 docker compose down 2>/dev/null || true
 
@@ -64,5 +69,6 @@ docker compose up -d
 
 print_header "DEPLOYMENT FINISHED"
 printf "%s%s✔ Your bot is running securely in the background!%s\n\n" "$G" "$B" "$N"
-printf "To view live logs anytime, run:\n"
-printf "  %scd %s && docker compose logs -f nighty%s\n\n" "$C" "$DIR" "$N"
+printf "Starting live log view... (Press Ctrl+C to exit logs anytime without stopping the bot)\n\n"
+sleep 2
+docker compose logs -f nighty
