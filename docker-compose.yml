@@ -25,6 +25,9 @@ services:
       - ./Nighty.exe:/app/Nighty.exe:ro
       # Persist configuration and prefixes
       - ./data:/data
+      # Mount scripts and config so updates don't require rebuilding the image
+      - ./scripts:/app/scripts:ro
+      - ./config:/app/config:ro
     # Extra hosts handles the RP-fetch blackholing directly via Docker
     # This ensures lrclib.net doesn't freeze the bot under emulation
     extra_hosts:

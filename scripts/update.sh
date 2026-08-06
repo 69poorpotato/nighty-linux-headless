@@ -62,7 +62,7 @@ fi
 
 if [ "$is_docker" -eq 1 ]; then
   info "Detected Docker deployment. Restarting container with new updates..."
-  if docker compose up -d; then
+  if docker compose up -d && docker compose restart nighty; then
     ok "Docker container successfully updated and restarted!"
   else
     warn "Failed to restart Docker container."
