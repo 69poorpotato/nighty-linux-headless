@@ -11,6 +11,7 @@ else: it repacks the binary with a headless GUI stub, enforces a sane headless
 configuration, exposes the Web UI safely over the LAN, and keeps the backend
 alive.
 
+> [!WARNING]
 > **Disclaimer.** This is an unofficial, community interop/automation tool. It is
 > **not** affiliated with or endorsed by Nighty, and it does **not** include,
 > redistribute, crack, or unlicense Nighty - you must supply your own legally
@@ -89,11 +90,16 @@ The easiest deployment method is the setup script. It installs Docker when
 needed, fetches the repository and stores the Web UI login in local secret files
 with restrictive permissions.
 
+**1. Download and Configure:**
 Run the following command on your server to download the repository and set your credentials:
 ```bash
 bash <(curl -sL https://raw.githubusercontent.com/glowxx/nighty-linux-headless/main/scripts/docker-install.sh)
 ```
-After the script finishes, upload your `Nighty.exe` to the server using an SFTP client (like FileZilla), then start the bot:
+
+**2. Upload your executable:**
+After the script finishes, upload your `Nighty.exe` to the server (`$HOME/nighty-linux-headless`) using an SFTP client (like FileZilla or WinSCP).
+
+**3. Start the bot:**
 ```bash
 cd "$HOME/nighty-linux-headless"
 bash scripts/docker-start.sh
@@ -315,28 +321,28 @@ tools - `uv`, Box64, distro Wine - are always left in place on Bare Metal.)
 - Your `.env` (credentials) and the Wine prefix (tokens) are git-ignored. Never
   commit them.
 
-## Troubleshooting
+## 🛠 Troubleshooting
 
-- **"Nighty is already running"** - this is the single-instance guard working.
-  Open the panel URL printed by the command. If the reported process is unhealthy,
-  inspect `systemctl status nighty` and `journalctl -u nighty -f`; do not start a
-  competing copy against the same ports and Wine prefix.
-- **`Bad EXE format` on ARM** - ARM/Box64 requires an x86-64 `PE32+` Nighty.exe.
-  The installer now validates the PE header before repacking and stops with a
-  clear message when a 32-bit or damaged executable is supplied.
-- **Box64 reports missing `libXcomposite`, `libXi`, `libXcursor`, `libXinerama`,
-  or `libxkbregistry`** - re-run `bash scripts/install.sh`. On apt-based systems
-  it installs the missing native Wine/X11 runtime libraries. Other distributions
-  receive a library list without guessed package names.
+> [!TIP]
+> **"Nighty is already running"**
+> This is the single-instance guard working. Open the panel URL printed by the command. If the reported process is unhealthy, inspect `systemctl status nighty` and `journalctl -u nighty -f`; do not start a competing copy against the same ports and Wine prefix.
+> [!WARNING]
+> **`Bad EXE format` on ARM**
+> ARM/Box64 requires an x86-64 `PE32+` Nighty.exe. The installer now validates the PE header before repacking and stops with a clear message when a 32-bit or damaged executable is supplied.
+
+> [!NOTE]
+> **Box64 reports missing libraries** (`libXcomposite`, `libXi`, etc.)
+> Re-run `bash scripts/install.sh`. On apt-based systems it installs the missing native Wine/X11 runtime libraries. Other distributions receive a library list without guessed package names.
 
 - **Repack fails / "bad marshal data"** - the repack must run under Python 3.8.
   Let `install.sh` use the `uv`-provided 3.8 interpreter.
-- **Bot is online but no commands work / "application command not found"** -
-  this is a **missing Nighty license**. Unlicensed, Nighty's `on_ready` aborts
-  before it registers its command tree. Complete step 1 (Activate) with your
-  Nighty license key and reconnect.
-- **Backend never opens 8090** - it only starts after a successful login. Open
-  the bridge and complete the onboarding flow.
+> [!CAUTION]
+> **Bot is online but no commands work / "application command not found"**
+> This is a **missing Nighty license**. Unlicensed, Nighty's `on_ready` aborts before it registers its command tree. Complete step 1 (Activate) with your Nighty license key and reconnect.
+
+> [!NOTE]
+> **Backend never opens 8090**
+> It only starts after a successful login. Open the bridge and complete the onboarding flow.
 - **Disk usage grows after repeated backend restarts** - the Windows executable
   is a PyInstaller one-file bundle. Forced watchdog exits cannot remove its
   `_MEI*` extraction directory, so `run.sh` now removes stale `_MEI*` directories
@@ -353,28 +359,19 @@ tools - `uv`, Box64, distro Wine - are always left in place on Bare Metal.)
   The helper only considers direct `_MEI*` directories below
   `drive_c/users/*/AppData/Local/Temp` in the selected prefix. Automatic cleanup
   can be temporarily disabled with `CLEAN_STALE_MEI=0` in `.env`.
-- **Authorization problems - "asks to authorize", bot disconnected, or stuck on
-  the auth screen.** If your bot is not authorized on your Discord account (or you
-  disconnected/removed it), Nighty cannot work and the bridge shows an
-  **Authorize** page with a direct OAuth link for your app - open it and approve
-  the bot. If the box is already locked (setup completed before), or you are still
-  stuck after authorizing, **reset the configuration** to redo onboarding cleanly:
+> [!IMPORTANT]
+> **Authorization problems** ("asks to authorize", bot disconnected, or stuck on the auth screen)
+> If your bot is not authorized on your Discord account (or you disconnected/removed it), Nighty cannot work and the bridge shows an **Authorize** page with a direct OAuth link for your app - open it and approve the bot. 
+> 
+> If the box is already locked, or you are still stuck after authorizing, **reset the configuration** to redo onboarding cleanly:
+> ```bash
+> bash <(curl -sL https://raw.githubusercontent.com/glowxx/nighty-linux-headless/main/scripts/uninstall.sh)
+> ```
+> Select the **Reset configuration** option to safely delete only your license and tokens, then restart Nighty so it re-runs the wizard.
 
-  ```bash
-  bash <(curl -sL https://raw.githubusercontent.com/glowxx/nighty-linux-headless/main/scripts/uninstall.sh)
-  ```
-
-  Select the **Reset configuration** option for your deployment method to safely delete only your license, tokens and the lockdown marker, then
-  restart Nighty so it re-runs Activate -> Sign in -> Connect bot -> Authorize
-  from the start - the system and service stay installed. (For a complete removal
-  instead, choose **Full uninstall**.) A user-installable app authorizes with an
-  `integration_type=1&scope=applications.commands` link; a classic app is invited
-  to a server.
-- **"some intents are OFF" on the bot step** - your bot application doesn't have
-  the privileged gateway intents enabled. Click the link the page gives you
-  (Developer Portal → your app → **Bot**), turn on **Presence**, **Server
-  Members** and **Message Content**, press **Save Changes**, then **Validate &
-  connect** again.
+> [!WARNING]
+> **"Some intents are OFF" on the bot step**
+> Your bot application doesn't have the privileged gateway intents enabled. Click the link the page gives you (Developer Portal → your app → **Bot**), turn on **Presence**, **Server Members** and **Message Content**, press **Save Changes**, then **Validate & connect** again.
 - **On x86-64, the backend hangs at startup (no `[STUBWV]` logs, `:8765` and
   `:8090` never bind, no error)** - your distro Wine is too old. Wine 6-9 (shipped
   by Ubuntu 22.04/24.04) hangs Nighty before the webview stub even loads; Wine 10+
