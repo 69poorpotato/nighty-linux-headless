@@ -1,4 +1,4 @@
-# 🌙 nighty-linux-headless
+# nighty-linux-headless
 
 **Run Nighty headless on Linux and access its built-in Web UI effortlessly over your LAN** — even without a desktop environment! 
 
@@ -9,7 +9,7 @@ It natively repackages Nighty to run perfectly on Linux servers. On **x86-64**, 
 
 ---
 
-## ⚙️ How it works (Short Version)
+## How it works (Short Version)
 
 ```mermaid
 graph LR
@@ -26,19 +26,19 @@ graph LR
 
 ---
 
-## ✨ Features
+## Features
 
-- 🚀 **Bring-Your-Own-Binary:** Just drop in your own `Nighty.exe`. Updates stay your choice (just re-run the installer with a newer exe).
-- 👻 **True Headless GUI Stub:** Repacks the executable with a no-op webview stub so the backend + Web UI start silently without a renderable desktop. Licensing and protected code remain strictly untouched.
-- 🔐 **Configurable Web UI Login:** You set the username/password in `.env`.
-- 🛡️ **Always-On Web UI (Hard Enforcement):** If Nighty or the user disables the Web UI, the guard forces it back on instantly so you never lose control of your headless bot.
-- 🤫 **Quiet Mode by Default:** Every `toast` and `sound` option is automatically disabled before each launch.
-- 🔄 **Persistence:** Runs as a `systemd` service or Docker container to survive crashes and reboots.
-- 🐳 **Docker Support:** Deploy effortlessly on any Linux server without polluting your host with Wine or Xvfb.
+- **Bring-Your-Own-Binary:** Just drop in your own `Nighty.exe`. Updates stay your choice (just re-run the installer with a newer exe).
+- **True Headless GUI Stub:** Repacks the executable with a no-op webview stub so the backend + Web UI start silently without a renderable desktop. Licensing and protected code remain strictly untouched.
+- **Configurable Web UI Login:** You set the username/password in `.env`.
+- **Always-On Web UI (Hard Enforcement):** If Nighty or the user disables the Web UI, the guard forces it back on instantly so you never lose control of your headless bot.
+- **Quiet Mode by Default:** Every `toast` and `sound` option is automatically disabled before each launch.
+- **Persistence:** Runs as a `systemd` service or Docker container to survive crashes and reboots.
+- **Docker Support:** Deploy effortlessly on any Linux server without polluting your host with Wine or Xvfb.
 
 ---
 
-## 📋 Requirements
+## Requirements
 
 You only need three things — **the installer handles the rest**:
 
@@ -56,9 +56,9 @@ You only need three things — **the installer handles the rest**:
 
 ---
 
-## 🚀 Quick Start
+## Quick Start
 
-### 🐳 Method 1: Docker (Recommended)
+### Method 1: Docker (Recommended)
 *Supported on **x86-64 (`amd64`)** and **64-bit ARM (`arm64`, including Raspberry Pi 5)**.*
 
 The easiest deployment method. It runs cleanly inside a secure container, storing your passwords in local secret files with restrictive permissions. Your licensed binary and runtime data are safely bind-mounted.
@@ -89,7 +89,7 @@ bash <(curl -sL https://raw.githubusercontent.com/glowxx/nighty-linux-headless/m
 
 ---
 
-### 🖥️ Method 2: Bare Metal
+### Method 2: Bare Metal
 For advanced users who want to run Nighty directly on their host OS.
 
 ```bash
@@ -125,7 +125,7 @@ bash scripts/run.sh autostart   # install + enable the systemd service
 
 ---
 
-## 🔐 Setup Wizard
+## Setup Wizard
 
 When you open `http://<host-ip>:8088/` for the first time, you are greeted by a single guided wizard that collects everything up front, validates each step against Discord, and writes Nighty's config directly so it boots fully set up in **one** start.
 
@@ -142,7 +142,7 @@ Run `bash scripts/add_account.sh` on the host. It re-opens the same wizard retit
 
 ---
 
-## 🔄 Updating Nighty
+## Updating Nighty
 
 If new fixes or features are pushed to this repository, you can update your deployment instantly without losing any data. This seamlessly detects your deployment method, pulls the latest changes, updates dependencies, and restarts your bot.
 
@@ -152,7 +152,7 @@ bash <(curl -sL https://raw.githubusercontent.com/glowxx/nighty-linux-headless/m
 
 ---
 
-## ⚙️ Configuration
+## Configuration
 
 All settings live in `.env` (copy from `.env.example`). Key ones:
 
@@ -169,7 +169,7 @@ All settings live in `.env` (copy from `.env.example`). Key ones:
 
 ---
 
-## 🌐 Real-time (WebSockets)
+## Real-time (WebSockets)
 
 Nighty's native Web UI uses **socket.io (WebSockets)** for live updates. The bundled bridge tunnels them with a `select()`-based full-duplex pump that disables Nagle (`TCP_NODELAY`) and enables TCP keepalive, so the connection stays up flawlessly. No extra software is required for stable real-time over the LAN.
 
@@ -177,7 +177,7 @@ Nighty's native Web UI uses **socket.io (WebSockets)** for live updates. The bun
 
 ---
 
-## 📂 Where your data lives (and how to fully reset)
+## Where your data lives (and how to fully reset)
 
 Nighty's state is stored **outside this repo**. Deleting the project folder does **not** reset Nighty! Everything persists under **`$NIGHTY_HOME`** (default `~/.local/share/nighty`):
 
@@ -195,7 +195,7 @@ Select the **Reset configuration** option matching your deployment method to saf
 
 ---
 
-## 🔒 Security Notes
+## Security Notes
 
 - Only the **bridge (8088)** is meant to be LAN-reachable.
 - The bridge does not store tokens; it securely forwards them to the local backend.
@@ -204,7 +204,7 @@ Select the **Reset configuration** option matching your deployment method to saf
 
 ---
 
-## 🛠 Troubleshooting
+## Troubleshooting
 
 > [!TIP]
 > **"Nighty is already running"**
@@ -231,6 +231,13 @@ Select the **Reset configuration** option matching your deployment method to saf
 > **"Some intents are OFF" on the bot step**
 > Your bot application doesn't have the privileged gateway intents enabled. Click the link the page gives you (Developer Portal → your app → **Bot**), turn on **Presence**, **Server Members** and **Message Content**, press **Save Changes**, then **Validate & connect** again.
 
+### Docker Troubleshooting
+
+- **"WEBUI_USERNAME is missing" error in logs:** Ensure you did not create the `docker-secrets` folder manually. The installer handles this to prevent permission conflicts between your host user and the container user. Re-run `bash scripts/docker-install.sh`.
+- **Docker Compose commands fail:** Ensure Docker and Docker Compose (v2) are installed. If using an older Ubuntu version, `apt install docker-compose-plugin` might be required.
+- **Cannot connect to Web UI on Docker:** Check if port `8088` is already in use by another service on your host, or blocked by a firewall (like UFW or iptables).
+- **Container restarts constantly:** View the live logs using `docker compose logs -f nighty`. The logs will specify if your `Nighty.exe` is missing or if the bot failed to start due to bad credentials.
+
 <details>
 <summary><b>Click to view advanced troubleshooting & bug fixes...</b></summary>
 
@@ -249,12 +256,12 @@ Select the **Reset configuration** option matching your deployment method to saf
 
 ---
 
-## 💖 Support
+## Support
 
-If this project saved you some time, a tip is hugely appreciated — thank you! ☕
+If this project saved you some time, a tip is hugely appreciated — thank you! 
 
 - **Ko-fi:** https://ko-fi.com/glowxx
 - **Litecoin (LTC):** `ltc1qz76tezwulr25xmv8xzzu7wgs9rkjl20mlplgew`
 
-## 📄 License
+## License
 MIT for the wrapper code in this repo. See `LICENSE`. *(Note: Nighty itself is proprietary and not included).*
