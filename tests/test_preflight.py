@@ -68,5 +68,13 @@ class LibraryValidationTests(unittest.TestCase):
             self.assertEqual(PREFLIGHT.check_libs(quiet=True), 4)
 
 
+class NetworkDiagnosticsTests(unittest.TestCase):
+    def test_check_network_runs_quietly(self) -> None:
+        # Check network returns 0 or 1 integer code without raising exceptions
+        result = PREFLIGHT.check_network(quiet=True)
+        self.assertIn(result, (0, 1))
+
+
 if __name__ == "__main__":
     unittest.main()
+

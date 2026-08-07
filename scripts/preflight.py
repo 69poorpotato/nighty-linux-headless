@@ -140,6 +140,80 @@ def check_wine(value: str) -> int:
     return 0
 
 
+import socket
+import ssl
+import urllib.error
+import urllib.request
+
+
+def check_network(quiet: bool = False) -> int:
+    """Run comprehensive network diagnostics (DNS, TLS, HTTP/Cloudflare, TCP ports)."""
+    results: List[Tuple[str, str, bool]] = []
+    has_error = False
+
+    # 1. DNS Resolution checks
+    domains = [
+        "discord.com",
+        "gateway.discord.gg",
+        "cdn.discordapp.com",
+        "lrclib.net",
+        "api.spotify.com",
+    ]
+    if not quiet:
+        print("[diag] Checking DNS resolution...")
+    for domain in domains:
+        try:
+            ip = socket.gethostbyname(domain)
+            results.append(("DNS " + domain, f"Resolved to {ip}", True))
+        except socket.gaierror as e:
+            results.append(("DNS " + domain, f"FAILED ({e})", False))
+            has_error = True
+
+    # 2. HTTPS / TLS Handshake to Discord API
+    if not quiet:
+        print("[diag] Checking HTTPS/TLS connectivity to Discord API...")
+    url = "https://discord.com/api/v10/gateway"
+    req = urllib.request.Request(url, headers={"User-Agent": "NightyHeadlessDiag/1.0"})
+    try:
+        ctx = ssl.create_default_context()
+        with urllib.request.urlopen(req, timeout=10, context=ctx) as resp:
+            results.append(("TLS discord.com", f"HTTP {resp.status} OK", True))
+    except urllib.error.HTTPError as e:
+        if e.code == 403:
+            results.append(("TLS discord.com", f"HTTP 403 Forbidden (Possible Cloudflare / Anti-Bot block)", False))
+            has_error = True
+        else:
+            results.append(("TLS discord.com", f"HTTP {e.code} ({e.reason})", True))
+    except (urllib.error.URLError, ssl.SSLError, OSError) as e:
+        results.append(("TLS discord.com", f"FAILED ({e})", False))
+        has_error = True
+
+    # 3. Port binding checks (8088 bridge, 8090 webui, 8765 stub)
+    ports = [
+        (8088, "Bridge LAN"),
+        (8090, "Web UI Native"),
+        (8765, "Stub CTL"),
+    ]
+    if not quiet:
+        print("[diag] Checking local port status...")
+    for port, label in ports:
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+            s.settimeout(0.5)
+            is_open = s.connect_ex(("127.0.0.1", port)) == 0
+            status_str = "BOUND (Listening)" if is_open else "CLOSED (Available)"
+            results.append((f"Port :{port} ({label})", status_str, True))
+
+    # Print summary
+    if not quiet:
+        print("\n=== NETWORK DIAGNOSTICS SUMMARY ===")
+        for test_name, detail, ok in results:
+            status = "OK" if ok else "FAIL"
+            print(f"  [{status}] {test_name:<30}: {detail}")
+        print("===================================\n")
+
+    return 1 if has_error else 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
     sub = parser.add_subparsers(dest="command", required=True)
@@ -150,6 +224,8 @@ def build_parser() -> argparse.ArgumentParser:
     libs.add_argument("--quiet", action="store_true")
     wine = sub.add_parser("wine", help="validate WINE_BIN")
     wine.add_argument("path")
+    diag = sub.add_parser("diag", help="run network and environment diagnostics")
+    diag.add_argument("--quiet", action="store_true")
     return parser
 
 
@@ -161,8 +237,11 @@ def main(argv: Optional[List[str]] = None) -> int:
         return check_libs(args.quiet)
     if args.command == "wine":
         return check_wine(args.path)
+    if args.command == "diag":
+        return check_network(args.quiet)
     return 2
 
 
 if __name__ == "__main__":
     raise SystemExit(main())
+
