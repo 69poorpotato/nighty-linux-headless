@@ -1,222 +1,158 @@
-# nighty-linux-headless
+# 🌙 nighty-linux-headless
 
-Run **Nighty** headless on Linux and use its built-in **Web UI** over your LAN -
-even though the native desktop GUI can't render there. It works on any Linux
-host: on **x86-64** Nighty runs natively under Wine; on other architectures it
-runs through an x86-64 emulator (Box64) under Wine. The startup script detects
-your architecture automatically.
+**Run Nighty headless on Linux and access its built-in Web UI effortlessly over your LAN** — even without a desktop environment! 
 
-You bring your **own licensed `Nighty.exe`**; this project automates everything
-else: it repacks the binary with a headless GUI stub, enforces a sane headless
-configuration, exposes the Web UI safely over the LAN, and keeps the backend
-alive.
+It natively repackages Nighty to run perfectly on Linux servers. On **x86-64**, Nighty runs natively under Wine. On **ARM64** (like Raspberry Pi), it runs flawlessly through an x86-64 emulator (Box64) under Wine. 
 
 > [!WARNING]
-> **Disclaimer.** This is an unofficial, community interop/automation tool. It is
-> **not** affiliated with or endorsed by Nighty, and it does **not** include,
-> redistribute, crack, or unlicense Nighty - you must supply your own legally
-> obtained copy and a valid license. Nighty is a Discord **selfbot**; automating
-> a user account can violate Discord's Terms of Service. Use it only with your
-> own account, on your own hardware, at your own risk. For education and personal
-> interoperability.
+> **Disclaimer:** This is an unofficial, community interop/automation tool. It is **not** affiliated with or endorsed by Nighty. It does **not** include, redistribute, crack, or unlicense Nighty — you must supply your own legally obtained copy and valid license. Nighty is a Discord **selfbot**; automating a user account can violate Discord's Terms of Service. Use it only with your own account, on your own hardware, at your own risk.
 
 ---
 
-## How it works (short version)
+## ⚙️ How it works (Short Version)
 
+```mermaid
+graph LR
+    A[Browser] -- "Port :8088" --> B(Bridge Proxy)
+    B -- "Port :8090" --> C[Nighty Web UI]
+    C -.-> D{Nighty Backend}
+    D -.-> E[Headless GUI Stub under Xvfb/Wine/Box64]
+    
+    style B fill:#f9f,stroke:#333,stroke-width:2px
+    style D fill:#bbf,stroke:#333,stroke-width:2px
 ```
-browser ──▶ bridge :8088 ──proxy──▶ Nighty Web UI :8090 (loopback)
-                                         ▲
-                                   Nighty backend running headless,
-                                   GUI replaced by a no-op webview stub,
-                                   under Xvfb + Wine (+ Box64 on non-x86 hosts)
-```
 
-Full details in [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
+*For full technical details, check out [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).*
 
-## Features
+---
 
-- **Bring-your-own binary** - drop in your own `Nighty.exe`; updates stay your
-  choice (just re-run the installer with a newer exe).
-- **Headless GUI stub** - repacks the exe so the backend + Web UI start without a
-  renderable desktop GUI. Licensing and protected code are left untouched.
-- **Configurable Web UI login** - you set the username/password in `.env`.
-- **Web UI always-on (hard enforcement)** - if Nighty or the user disables the
-  Web UI, it is forced back on within seconds (it's the only usable interface on
-  a headless box).
-- **Quiet by default** - every `toast` and `sound` option in `notifications.json`
-  is disabled before each launch.
-- **Persistence** - `run.sh` relaunches the backend on restart/close, and systemd
-  supervises everything (survives crashes and reboots).
-- **Docker Support** - deploy effortlessly on any Linux server without polluting your host with Wine or Xvfb.
+## ✨ Features
 
-## Requirements
+- 🚀 **Bring-Your-Own-Binary:** Just drop in your own `Nighty.exe`. Updates stay your choice (just re-run the installer with a newer exe).
+- 👻 **True Headless GUI Stub:** Repacks the executable with a no-op webview stub so the backend + Web UI start silently without a renderable desktop. Licensing and protected code remain strictly untouched.
+- 🔐 **Configurable Web UI Login:** You set the username/password in `.env`.
+- 🛡️ **Always-On Web UI (Hard Enforcement):** If Nighty or the user disables the Web UI, the guard forces it back on instantly so you never lose control of your headless bot.
+- 🤫 **Quiet Mode by Default:** Every `toast` and `sound` option is automatically disabled before each launch.
+- 🔄 **Persistence:** Runs as a `systemd` service or Docker container to survive crashes and reboots.
+- 🐳 **Docker Support:** Deploy effortlessly on any Linux server without polluting your host with Wine or Xvfb.
 
-You only need three things - **the installer handles the rest**:
+---
 
-- Any **Linux** host with **`sudo`** access and an **internet connection**.
-- Your own **`Nighty.exe`** and a valid Nighty license.
-- A supported package manager for the auto-install (**apt**, **dnf**, **pacman**,
-  or **zypper**). On other distros, install the dependencies manually (below).
+## 📋 Requirements
 
-`scripts/install.sh` **checks what is already present and installs only what is
-missing**:
+You only need three things — **the installer handles the rest**:
 
-- base tools (curl/tar/xz/gnupg), **Python 3**, **Xvfb**, and
-  **[`uv`](https://docs.astral.sh/uv/)** (used to fetch Python 3.8 for the repack);
-- on **x86-64** - **Wine** from your distro when it is **version 10 or newer**
-  (Nighty runs natively). Older Wine **hangs Nighty during early startup with no
-  error** (Ubuntu 22.04/24.04 still ship Wine 6-9), so when the distro Wine is too
-  old - or not installed - the installer transparently falls back to the same
-  self-contained **static x86-64 Wine** build used on ARM. Your system Wine is
-  left untouched;
-- on **non-x86** (ARM, etc.) - **Box64** plus a **static x86-64 Wine** build that
-  runs under it. Hardware is detected automatically (e.g. the best Box64 build),
-  and `run.sh` applies emulator tuning only when needed.
+1. Any **Linux** host with **`sudo`** access and an **internet connection**.
+2. Your own **`Nighty.exe`** and a valid Nighty license.
+3. A supported package manager for auto-install (**apt**, **dnf**, **pacman**, or **zypper**). 
 
-Re-running the installer is safe: anything already set up is detected and skipped.
+> [!NOTE]
+> The `scripts/install.sh` script checks what is already present and **installs only what is missing**:
+> - Base tools (curl/tar/xz/gnupg), **Python 3**, **Xvfb**, and **`uv`**.
+> - On **x86-64**: **Wine** (version 10 or newer). If your distro Wine is too old (Ubuntu 22.04/24.04), it transparently falls back to a self-contained static Wine build. Your system Wine is untouched.
+> - On **non-x86** (ARM): **Box64** plus a static x86-64 Wine build. Hardware is detected automatically.
 
-## Quick start
+*Re-running the installer is completely safe: anything already set up is detected and skipped.*
 
-### Method 1: Docker (Recommended)
+---
 
-Docker Compose is supported on **x86-64 (`amd64`)** and **64-bit ARM
-(`arm64`, including Raspberry Pi 5)**. The image builds the required Box64
-emulator once on ARM; container startup does not compile it again. Your licensed
-binary, runtime data and Web UI credentials are bind-mounted or provided as
-Docker secrets and are never copied into an image layer.
+## 🚀 Quick Start
 
-The easiest deployment method is the setup script. It installs Docker when
-needed, fetches the repository and stores the Web UI login in local secret files
-with restrictive permissions.
+### 🐳 Method 1: Docker (Recommended)
+*Supported on **x86-64 (`amd64`)** and **64-bit ARM (`arm64`, including Raspberry Pi 5)**.*
 
-**1. Download and Configure:**
+The easiest deployment method. It runs cleanly inside a secure container, storing your passwords in local secret files with restrictive permissions. Your licensed binary and runtime data are safely bind-mounted.
+
+**1. Download & Configure:**
 Run the following command on your server to download the repository and set your credentials:
 ```bash
 bash <(curl -sL https://raw.githubusercontent.com/glowxx/nighty-linux-headless/main/scripts/docker-install.sh)
 ```
 
-**2. Upload your executable:**
+**2. Upload your Executable:**
 After the script finishes, upload your `Nighty.exe` to the server (`$HOME/nighty-linux-headless`) using an SFTP client (like FileZilla or WinSCP).
 
-**3. Start the bot:**
+**3. Start the Bot:**
 ```bash
 cd "$HOME/nighty-linux-headless"
 bash scripts/docker-start.sh
 ```
 
-The start script asks for credentials if `docker-secrets/` is not configured,
-matches the image user to the current Linux account, builds the image and starts
-the container. Passwords shorter than eight characters and known example
-passwords are rejected. To verify startup:
+> [!TIP]
+> After booting, view the Web UI by visiting `http://<your-server-ip>:8088/` in your browser!
 
-```bash
-docker compose ps
-curl http://127.0.0.1:8088/ready
-# Expected after boot: {"ready": true}
-```
-
-The Docker build context is allow-listed by `.dockerignore`; `Nighty.exe`,
-`Nighty_stub.exe`, `.env`, `data/`, logs, credentials and Git metadata cannot be
-added to the image by `COPY`.
-
-#### Uninstalling Docker Setup
-
-If you need to completely remove the bot and all of its data from your server, you can use the built-in interactive uninstaller:
+**Uninstalling Docker Setup:**
+If you need to completely remove the bot and all of its data, use our interactive uninstaller and select the **Full uninstall (Docker)** option:
 ```bash
 bash <(curl -sL https://raw.githubusercontent.com/glowxx/nighty-linux-headless/main/scripts/uninstall.sh)
 ```
-Select the **Full uninstall (Docker)** option when prompted.
 
-### Method 2: Bare Metal
+---
+
+### 🖥️ Method 2: Bare Metal
+For advanced users who want to run Nighty directly on their host OS.
 
 ```bash
 git clone <your-fork-url> nighty-linux-headless
 cd nighty-linux-headless
 
-# 1) Put YOUR binary here
+# 1. Put YOUR binary here
 cp /path/to/Nighty.exe .
 
-# 2) Install everything that's missing + repack into Nighty_stub.exe
-#    (auto-installs Wine/Xvfb/uv, and Box64 + static Wine on ARM - asks for sudo)
+# 2. Install missing dependencies & repack into Nighty_stub.exe (asks for sudo)
 bash scripts/install.sh
 
-# 3) Set your Web UI username/password (paths are filled in for you)
+# 3. Set your Web UI username/password
 $EDITOR .env
 
-# 4) Start everything
+# 4. Start everything
 bash scripts/run.sh
 ```
 
-`run.sh` brings up the **whole stack** (virtual display, config enforcement, the
-LAN Web UI bridge, and the Nighty backend - each kept alive automatically). With
-no arguments it shows a menu:
-
-```
+**The Orchestrator (`run.sh`)** brings up the whole stack (virtual display, config enforcement, LAN bridge, and backend). With no arguments it shows a menu:
+```text
   1) Run now (one-off, in this terminal)
   2) Set up autostart (systemd) - starts automatically on every boot
 ```
-
-Choose **2** and it installs and enables a systemd service for you (asks for
-`sudo`), so Nighty starts on every boot - no manual unit editing needed. You can
-also skip the menu with a command:
-
+Choose **2** and it installs a systemd service for you. You can also skip the menu:
 ```bash
 bash scripts/run.sh once        # run in this terminal
 bash scripts/run.sh autostart   # install + enable the systemd service
 ```
 
-Only one stack can own a runtime at a time. If Nighty is already running, another
-`run.sh` invocation exits safely and prints the existing panel URL. It does not
-kill the live process or create another Wine/Xvfb/bridge stack. The guard also
-recognises older running releases which do not yet create the lock file.
+> [!WARNING]
+> Only one stack can own a runtime at a time. If Nighty is already running, another `run.sh` invocation exits safely. **Do not background the menu with `&`** as it can't read your keypress.
 
-> When using the menu, don't background it with `&` - a backgrounded prompt
-> can't read your keypress. Use `run.sh autostart` (or run it in the foreground).
+---
 
-Then open `http://<host-ip>:8088/` in a browser. First run is a single guided
-wizard that collects everything up front, validates each step against Discord,
-then writes Nighty's config directly so the backend boots fully set up in **one**
-start (no simulating Nighty or waiting between steps):
+## 🔐 Setup Wizard
 
-1. **Activate** - paste your **Nighty license key** (from your Nighty purchase /
-   dashboard). Nighty needs it to run: without a license the bot can sign in but
-   `on_ready` aborts before its commands are registered, so it looks online yet
-   **no command works**.
-2. **Sign in** - paste your Discord **account token**. The bridge validates it
-   against Discord and resolves the username used as the login key.
-3. **Connect your bot** - paste your **bot token** (Developer Portal → your app
-   → **Bot** → *Reset Token*). The bridge verifies it with Discord: a valid token
-   with the required **privileged intents** (Presence, Server Members, Message
-   Content). If any are off it shows exactly which, and links straight to the
-   settings page - flip them on, Save Changes, then continue.
-4. **Authorize** - open the **Authorize on Discord** link and approve the bot on
-   your account. This is a strict gate: the wizard **refuses to finish and start
-   Nighty until the bot is actually linked**, so you never end up with a bot that
-   is online but unauthorized.
+When you open `http://<host-ip>:8088/` for the first time, you are greeted by a single guided wizard that collects everything up front, validates each step against Discord, and writes Nighty's config directly so it boots fully set up in **one** start.
 
-On **Finish** the bridge writes `auth.json` (license) and the account/bot login
-into `nighty.config` directly, then starts Nighty once. Pasting the tokens
-yourself avoids the developer-portal password and captcha entirely.
+1. **Activate:** Paste your **Nighty license key**. *(Without a license the bot can sign in, but no commands will work!)*
+2. **Sign In:** Paste your Discord **account token**. 
+3. **Connect your Bot:** Paste your **bot token** (Developer Portal → your app → **Bot** → *Reset Token*). The bridge verifies it has the required privileged intents (Presence, Server Members, Message Content).
+4. **Authorize:** Open the **Authorize on Discord** link and approve the bot on your account. 
 
-### Adding another account
+> [!IMPORTANT]
+> The setup is strictly gated. The wizard **refuses to finish** until the bot is actually linked, so you never end up with an unauthorized bot.
 
-Run `bash scripts/add_account.sh` on the host. It re-opens the same wizard in the
-Web UI, retitled **"Add account"**, runs the identical validation and OAuth gate,
-and writes the new login straight into `nighty.config` (making it the active
-account) before restarting Nighty. Ctrl+C cancels and restores the panel.
+**Adding another account:**
+Run `bash scripts/add_account.sh` on the host. It re-opens the same wizard retitled "Add account" and writes the new login straight into `nighty.config` before restarting Nighty.
 
-After that the native Web UI loads.
+---
 
-## Updating Nighty
+## 🔄 Updating Nighty
 
-If new fixes or features are pushed to this repository, you can update your deployment instantly without losing any data. This seamlessly detects if you are using Docker or Bare Metal, pulls the latest changes, updates any dependencies, and restarts your bot.
+If new fixes or features are pushed to this repository, you can update your deployment instantly without losing any data. This seamlessly detects your deployment method, pulls the latest changes, updates dependencies, and restarts your bot.
 
 ```bash
 bash <(curl -sL https://raw.githubusercontent.com/glowxx/nighty-linux-headless/main/scripts/update.sh)
 ```
 
-## Configuration
+---
+
+## ⚙️ Configuration
 
 All settings live in `.env` (copy from `.env.example`). Key ones:
 
@@ -231,101 +167,49 @@ All settings live in `.env` (copy from `.env.example`). Key ones:
 | `DISPLAY_NUM` | Xvfb display number |
 | `ENFORCE_WEBUI`, `ENFORCE_INTERVAL` | Web UI hard-enforcement |
 
-## Real-time (WebSockets)
+---
 
-Nighty's native Web UI uses **socket.io (WebSockets)** for live updates. The
-bundled bridge tunnels them with a `select()`-based full-duplex pump that
-disables Nagle (`TCP_NODELAY`) and enables TCP keepalive, so the connection
-stays up instead of dropping into a "Disconnected - Reconnecting…" loop. No
-extra software is required for stable real-time over the LAN.
+## 🌐 Real-time (WebSockets)
 
-If you want TLS or are fronting a high-traffic deployment, you can still put a
-dedicated reverse proxy ahead of the bridge - a ready-made
-[`Caddyfile.example`](Caddyfile.example) is included (`nginx` works too). It is
-optional, not required.
+Nighty's native Web UI uses **socket.io (WebSockets)** for live updates. The bundled bridge tunnels them with a `select()`-based full-duplex pump that disables Nagle (`TCP_NODELAY`) and enables TCP keepalive, so the connection stays up flawlessly. No extra software is required for stable real-time over the LAN.
 
-## Repository layout
+*(If you want TLS or are fronting a high-traffic deployment, an optional [`Caddyfile.example`](Caddyfile.example) is included for reverse proxy setup).*
 
-```
-nighty-linux-headless/
-├── README.md
-├── LICENSE                  MIT (wrapper only; Nighty is third-party)
-├── .env.example             copy to .env
-├── Caddyfile.example        optional production front (TLS/HTTP2; not required)
-├── .gitignore
-├── scripts/
-│   ├── install.sh           auto-install missing deps + scaffold .env + repack
-│   ├── uninstall.sh         stop + remove service, purge all data (clean reset)
-│   ├── repack.py            Nighty.exe -> Nighty_stub.exe (headless stub)
-│   ├── enforce_config.py    notifications off + Web UI creds + web:true
-│   ├── webui_guard.py       continuous "Web UI always on" enforcement
-│   ├── add_account.sh       add another Discord account (re-opens the wizard)
-│   ├── run.sh               orchestrator: starts the whole stack + autostart menu
-│   └── bridge.py            LAN reverse-proxy + onboarding wizard + provisioning
-├── systemd/
-│   └── nighty.service       reference unit (run.sh installs this for you)
-└── docs/
-    └── ARCHITECTURE.md
-```
+---
 
-## Where your data lives (and how to fully reset)
+## 📂 Where your data lives (and how to fully reset)
 
-Nighty's state is stored **outside this repo**, so deleting the project folder or
-the systemd unit does **not** reset Nighty - a reinstall finds the old data and
-comes straight back up. Everything persists under **`$NIGHTY_HOME`** (default
-`~/.local/share/nighty`):
+Nighty's state is stored **outside this repo**. Deleting the project folder does **not** reset Nighty! Everything persists under **`$NIGHTY_HOME`** (default `~/.local/share/nighty`):
 
-- `…/prefix/` - the Wine prefix. Your **license** (`auth.json`), **account + bot
-  tokens** and `web=true` (`nighty.config`), Web UI creds (`web_config.json`), and
-  `data/` (themes, scripts, settings) all live inside it.
-- `…/wine/` - the bundled x86-64 Wine (non-x86 hosts), plus the logs.
+- `…/prefix/` - the Wine prefix (License, tokens, Web UI creds, themes, scripts).
+- `…/wine/` - the bundled Wine, plus the logs.
 
-The only Nighty files elsewhere are the generated `.env` and the
-`/etc/systemd/system/nighty.service` unit. See
-[`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md#data--storage-locations) for the
-full map.
+Once initial setup completes, the box is **locked** with a `.setup_locked` marker so the setup screens are never shown again. 
 
-Once initial setup completes (license + tokens + an authorized bot), the box is
-**locked**: a `.setup_locked` marker is written next to the config, and every
-later restart boots straight into the working state - the setup and authorization
-screens are never shown again. The only way back to setup is the reset option
-below.
-
-`scripts/uninstall.sh` opens an interactive menu:
-
+### Resetting Configuration
+To unlock and re-run setup, use the interactive uninstaller:
 ```bash
 bash <(curl -sL https://raw.githubusercontent.com/glowxx/nighty-linux-headless/main/scripts/uninstall.sh)
-
-#  ── Docker Deployments ──────────────────────────────────────
-#  [1] Full uninstall (Docker)      stop containers, wipe volumes, remove directory
-#  [2] Reset configuration (Docker) wipe tokens/license/auth only, then restart container
-#
-#  ── Bare Metal Deployments ──────────────────────────────────
-#  [3] Full uninstall (Bare Metal)  remove everything (binary, service, data, prefix)
-#  [4] Reset configuration (Bare)   wipe tokens/license/auth only, then restart for fresh setup
-#
-#  [5] Cancel
 ```
+Select the **Reset configuration** option matching your deployment method to safely wipe tokens/license/auth only, then restart Nighty for a fresh setup flow.
 
-Use the **Reset configuration** option matching your deployment method to redo onboarding (it is the only supported way
-to unlock and re-run setup). Use the **Full uninstall** option to remove Nighty entirely. (Shared
-tools - `uv`, Box64, distro Wine - are always left in place on Bare Metal.)
+---
 
-## Security notes
+## 🔒 Security Notes
 
-- Only the **bridge (8088)** is meant to be LAN-reachable. The native Web UI
-  (8090) and stub control server (8765) stay on loopback.
-- The bridge does not store tokens; it forwards them to the local backend.
-- The LAN bridge has no transport encryption - run it only on a trusted LAN, or
-  put it behind a reverse proxy / VPN if you need remote access.
-- Your `.env` (credentials) and the Wine prefix (tokens) are git-ignored. Never
-  commit them.
+- Only the **bridge (8088)** is meant to be LAN-reachable.
+- The bridge does not store tokens; it securely forwards them to the local backend.
+- The LAN bridge has no transport encryption — run it only on a trusted LAN, or put it behind a VPN for remote access.
+- Your `.env` (credentials) and Wine prefix (tokens) are git-ignored. Never commit them!
+
+---
 
 ## 🛠 Troubleshooting
 
 > [!TIP]
 > **"Nighty is already running"**
 > This is the single-instance guard working. Open the panel URL printed by the command. If the reported process is unhealthy, inspect `systemctl status nighty` and `journalctl -u nighty -f`; do not start a competing copy against the same ports and Wine prefix.
+
 > [!WARNING]
 > **`Bad EXE format` on ARM**
 > ARM/Box64 requires an x86-64 `PE32+` Nighty.exe. The installer now validates the PE header before repacking and stops with a clear message when a 32-bit or damaged executable is supplied.
@@ -334,100 +218,43 @@ tools - `uv`, Box64, distro Wine - are always left in place on Bare Metal.)
 > **Box64 reports missing libraries** (`libXcomposite`, `libXi`, etc.)
 > Re-run `bash scripts/install.sh`. On apt-based systems it installs the missing native Wine/X11 runtime libraries. Other distributions receive a library list without guessed package names.
 
-- **Repack fails / "bad marshal data"** - the repack must run under Python 3.8.
-  Let `install.sh` use the `uv`-provided 3.8 interpreter.
 > [!CAUTION]
 > **Bot is online but no commands work / "application command not found"**
 > This is a **missing Nighty license**. Unlicensed, Nighty's `on_ready` aborts before it registers its command tree. Complete step 1 (Activate) with your Nighty license key and reconnect.
 
-> [!NOTE]
-> **Backend never opens 8090**
-> It only starts after a successful login. Open the bridge and complete the onboarding flow.
-- **Disk usage grows after repeated backend restarts** - the Windows executable
-  is a PyInstaller one-file bundle. Forced watchdog exits cannot remove its
-  `_MEI*` extraction directory, so `run.sh` now removes stale `_MEI*` directories
-  from Nighty's dedicated Wine Temp folder before launch and after backend exit.
-  To inspect or clean leftovers manually, stop Nighty first, then run:
-
-  ```bash
-  sudo systemctl stop nighty
-  WINEPREFIX="$HOME/.local/share/nighty/prefix" bash scripts/cleanup_mei.sh --dry-run
-  WINEPREFIX="$HOME/.local/share/nighty/prefix" bash scripts/cleanup_mei.sh
-  sudo systemctl start nighty
-  ```
-
-  The helper only considers direct `_MEI*` directories below
-  `drive_c/users/*/AppData/Local/Temp` in the selected prefix. Automatic cleanup
-  can be temporarily disabled with `CLEAN_STALE_MEI=0` in `.env`.
 > [!IMPORTANT]
 > **Authorization problems** ("asks to authorize", bot disconnected, or stuck on the auth screen)
-> If your bot is not authorized on your Discord account (or you disconnected/removed it), Nighty cannot work and the bridge shows an **Authorize** page with a direct OAuth link for your app - open it and approve the bot. 
-> 
-> If the box is already locked, or you are still stuck after authorizing, **reset the configuration** to redo onboarding cleanly:
-> ```bash
-> bash <(curl -sL https://raw.githubusercontent.com/glowxx/nighty-linux-headless/main/scripts/uninstall.sh)
-> ```
-> Select the **Reset configuration** option to safely delete only your license and tokens, then restart Nighty so it re-runs the wizard.
+> If your bot is not authorized on your Discord account (or you disconnected/removed it), Nighty cannot work and the bridge shows an **Authorize** page with a direct OAuth link.
+> If the box is already locked, **reset the configuration** using `uninstall.sh` to safely delete only your license and tokens, then restart Nighty so it re-runs the wizard.
 
 > [!WARNING]
 > **"Some intents are OFF" on the bot step**
 > Your bot application doesn't have the privileged gateway intents enabled. Click the link the page gives you (Developer Portal → your app → **Bot**), turn on **Presence**, **Server Members** and **Message Content**, press **Save Changes**, then **Validate & connect** again.
-- **On x86-64, the backend hangs at startup (no `[STUBWV]` logs, `:8765` and
-  `:8090` never bind, no error)** - your distro Wine is too old. Wine 6-9 (shipped
-  by Ubuntu 22.04/24.04) hangs Nighty before the webview stub even loads; Wine 10+
-  fixes it. The installer detects this and falls back to a static Wine build
-  automatically, so just re-run `bash scripts/install.sh`. To force the static
-  build regardless, point `WINE_BIN` in `.env` at it (the installer downloads it
-  to `~/.local/share/nighty/wine`), or pick a specific release with `WINE_VERSION`.
-- **On non-x86 hosts, Wine crashes with illegal-instruction** - you need a
-  recent **Box64** built for your CPU; older distro packages may be too old.
-- **The menu prints but typing `1`/`2` does nothing (or "command not found")** -
-  you backgrounded `run.sh` with `&`; a backgrounded prompt can't read input.
-  Run it in the foreground, or use `bash scripts/run.sh once` / `autostart`.
-- **Backend keeps exiting / "Disconnected - Reconnecting"** - make sure the
-  headless DLL overrides are active (`run.sh` sets `WINEDLLOVERRIDES` to disable
-  .NET/IE/desktop integration, which otherwise abort on a fresh Wine prefix).
-- **Bot is very slow / commands return "the application did not respond"** - on
-  emulated (non-x86) hosts this is caused by Nighty's Rich-Presence task fetching
-  song lyrics from **lrclib.net** with a blocking call on the bot's event loop;
-  under emulation it freezes the whole bot for tens of seconds (the gateway
-  heartbeat times out and slash commands miss Discord's 3-second deadline).
-  `install.sh` blackholes `lrclib.net` in `/etc/hosts` so that call fails
-  instantly (`BLOCK_LRCLIB=1`), `run.sh` applies faster Box64 dynarec tuning, and
-  config enforcement disables the Rich-Presence status rotator. If you still see
-  it, confirm the `/etc/hosts` entry exists and that you restarted the stack.
-  On ARM, `NIGHTY_BOX64_PROFILE=balanced` speeds up the main Wine/Python process
-  while `config/box64-nighty.rc` keeps `tls-client-64.dll` on strict settings.
-  Set it back to `safe` for an immediate compatibility rollback.
-- **The loading screen remains after the stub starts** - the second-stage
-  watchdog waits for the real Web UI port. If a transient Discord/Cloudflare
-  error leaves the backend half-started, it restarts the backend after
-  `WEBUI_BOOT_TIMEOUT` instead of waiting forever.
-- **A Rich-Presence preset can crash the backend under emulation** - on emulated
-  (non-x86) hosts, running an **RPC** preset makes Nighty fetch image assets
-  through the bundled Go `tls-client`, whose JSON handling **intermittently
-  segfaults under Box64** ("access violation" / Go `runtime.sigpanic`) and takes
-  the whole backend down (it then auto-relaunches). The config guard is
-  type-aware: it disables auto-start (and stops in memory) only for **RPC**
-  profiles, the crashing kind. So the Web UI's "Run last active profile on
-  startup" is honored for safe **custom-status** rotators but suppressed for RPC
-  presets. This is a Box64/Nighty emulation limitation, not a bug in this wrapper.
-- **"Error downloading sound ... HTTP Error 403: Forbidden"** - Nighty fetches
-  its notification sounds with `urllib`, whose default `User-Agent` the CDN
-  (Cloudflare) blocks with 403, so the sound never lands and the error repeats on
-  every matching event. The config enforcer pre-seeds `data/sounds/` with those
-  files using a browser `User-Agent` at launch, so Nighty's download-if-missing
-  path skips the blocked request. If a different sound shows the same 403, add its
-  file name to `SOUND_FILES` in `scripts/enforce_config.py`.
 
-## License
+<details>
+<summary><b>Click to view advanced troubleshooting & bug fixes...</b></summary>
 
-MIT for the wrapper code in this repo. See [`LICENSE`](LICENSE) - note the
-NOTICE: Nighty itself is proprietary and not included.
+- **Repack fails / "bad marshal data"**: The repack must run under Python 3.8. Let `install.sh` use the `uv`-provided 3.8 interpreter.
+- **Backend never opens 8090**: It only starts after a successful login. Open the bridge and complete the onboarding flow.
+- **Disk usage grows after repeated backend restarts**: Forced watchdog exits cannot remove Nighty's `_MEI*` extraction directory. `run.sh` now removes stale directories automatically. To clean manually, stop Nighty and run `bash scripts/cleanup_mei.sh`.
+- **On x86-64, the backend hangs at startup (no `[STUBWV]` logs)**: Your distro Wine is too old (Wine 6-9). The installer detects this and falls back to a static Wine 10 build automatically. Re-run `bash scripts/install.sh`.
+- **On non-x86 hosts, Wine crashes with illegal-instruction**: You need a recent **Box64** built for your CPU.
+- **The menu prints but typing `1`/`2` does nothing**: You backgrounded `run.sh` with `&`. Run it in the foreground, or use `bash scripts/run.sh once`.
+- **Backend keeps exiting / "Disconnected - Reconnecting"**: Make sure the headless DLL overrides are active (`run.sh` sets `WINEDLLOVERRIDES`).
+- **Bot is very slow / "application did not respond"**: On emulated hosts this is caused by Nighty's Rich-Presence task fetching lyrics from `lrclib.net` via blocking calls. `install.sh` blackholes `lrclib.net` in `/etc/hosts` so it fails instantly. On ARM, ensure `NIGHTY_BOX64_PROFILE=balanced`.
+- **The loading screen remains after the stub starts**: If a transient Discord error leaves the backend half-started, the watchdog restarts the backend after `WEBUI_BOOT_TIMEOUT`.
+- **A Rich-Presence preset crashes backend under emulation**: Running an **RPC** preset makes Nighty fetch image assets through `tls-client`, which intermittently segfaults under Box64. The config guard disables auto-start for RPC profiles to prevent boot-loops.
+- **"Error downloading sound ... HTTP Error 403: Forbidden"**: Cloudflare blocks Nighty's default `urllib` agent. The config enforcer pre-seeds `data/sounds/` using a browser User-Agent at launch to skip the blocked request.
+</details>
 
-## Support
+---
 
-If this project saved you some time, a tip is hugely appreciated - thank you! ☕
+## 💖 Support
+
+If this project saved you some time, a tip is hugely appreciated — thank you! ☕
 
 - **Ko-fi:** https://ko-fi.com/glowxx
 - **Litecoin (LTC):** `ltc1qz76tezwulr25xmv8xzzu7wgs9rkjl20mlplgew`
+
+## 📄 License
+MIT for the wrapper code in this repo. See `LICENSE`. *(Note: Nighty itself is proprietary and not included).*
