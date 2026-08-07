@@ -61,12 +61,15 @@ COPY --chown=nighty:nighty scripts/ /app/scripts/
 COPY --chown=nighty:nighty config/ /app/config/
 COPY --chown=nighty:nighty .env.example /app/.env.example
 
-RUN mkdir -p /data/nighty && \
+RUN mkdir -p /data/nighty /app/dist/ws_extensions && \
     chown -R nighty:nighty /app /data
 
 # Default environment variables
 ENV WEBUI_HOST=127.0.0.1 \
-    BRIDGE_HOST=0.0.0.0
+    BRIDGE_HOST=0.0.0.0 \
+    PYTHONIOENCODING=utf-8 \
+    SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt \
+    SSL_CERT_DIR=/etc/ssl/certs
 
 USER nighty
 
