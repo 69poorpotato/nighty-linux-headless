@@ -73,6 +73,7 @@ done
 
 printf "%s%sEnter max log size in MB (default 10):%s " "$M" "$B" "$N"
 read -r LOG_SIZE_MB
+LOG_SIZE_MB="$(printf '%s' "$LOG_SIZE_MB" | tr -dc '0-9')"
 LOG_SIZE_MB="${LOG_SIZE_MB:-10}"
 printf '\n'
 
@@ -83,8 +84,12 @@ mkdir -p docker-secrets
 printf '%s\n' "$WEBUI_USER" > docker-secrets/webui_username
 printf '%s\n' "$WEBUI_PASS" > docker-secrets/webui_password
 
-# Write log limit to .env for docker-compose to pick up
-printf 'NIGHTY_LOG_MAX_SIZE=%sm\n' "$LOG_SIZE_MB" > .env
+# Write log limit to .env for docker-compose to pick up (preserve existing .env if present)
+if [ -f .env ]; then
+  grep -v '^NIGHTY_LOG_MAX_SIZE=' .env > .env.tmp 2>/dev/null || true
+  mv .env.tmp .env
+fi
+printf 'NIGHTY_LOG_MAX_SIZE=%sm\n' "$LOG_SIZE_MB" >> .env
 
 if [ "$(id -u)" -eq 0 ]; then
   PUID="${PUID:-${SUDO_UID:-1000}}" PGID="${PGID:-${SUDO_GID:-1000}}"
