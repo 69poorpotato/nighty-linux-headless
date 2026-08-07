@@ -20,6 +20,11 @@ services:
     secrets:
       - webui_username
       - webui_password
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "${NIGHTY_LOG_MAX_SIZE:-10m}"
+        max-file: "1"
     volumes:
       # Mount your Nighty.exe (read-only)
       - ./Nighty.exe:/app/Nighty.exe:ro
