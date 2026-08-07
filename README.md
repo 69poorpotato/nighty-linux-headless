@@ -17,9 +17,12 @@ graph LR
     B -- "Port :8090" --> C[Nighty Web UI]
     C -.-> D{Nighty Backend}
     D -.-> E[Headless GUI Stub under Xvfb/Wine/Box64]
-    
-    style B fill:#f9f,stroke:#333,stroke-width:2px
-    style D fill:#bbf,stroke:#333,stroke-width:2px
+
+    style A fill:#1e293b,stroke:#475569,stroke-width:2px,color:#ffffff
+    style B fill:#db2777,stroke:#f472b6,stroke-width:2px,color:#ffffff
+    style C fill:#1e293b,stroke:#475569,stroke-width:2px,color:#ffffff
+    style D fill:#2563eb,stroke:#60a5fa,stroke-width:2px,color:#ffffff
+    style E fill:#059669,stroke:#34d399,stroke-width:2px,color:#ffffff
 ```
 
 *For full technical details, check out [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).*
