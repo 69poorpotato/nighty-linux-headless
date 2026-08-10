@@ -27,33 +27,39 @@ printf " %snighty-linux-headless - auto-updater%s\n" "$B" "$N"
 printf "%s%s============================================================%s\n\n" "$C" "$B" "$N"
 
 if ! need git; then
-  warn "Git is not installed. Cannot update."
-  exit 1
-fi
-
-if ! git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
-  warn "Not inside a git repository ($HERE). Cannot update."
-  exit 1
+  warn "Git is not installed. Will attempt to update via curl..."
 fi
 
 info "Pulling latest updates from GitHub..."
-stashed=0
-OLD_STASH="$(git rev-parse -q --verify refs/stash || true)"
-git stash >/dev/null 2>&1 || true
-NEW_STASH="$(git rev-parse -q --verify refs/stash || true)"
-if [ "$OLD_STASH" != "$NEW_STASH" ]; then
-  stashed=1
-fi
 
-if ! git pull origin main; then
-    warn "Failed to pull updates from GitHub. Check your network or git status."
-    if [ "$stashed" -eq 1 ]; then git stash pop >/dev/null 2>&1 || true; fi
+# If it's a git repository, update gracefully using git pull
+if git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+  stashed=0
+  OLD_STASH="$(git rev-parse -q --verify refs/stash || true)"
+  git stash >/dev/null 2>&1 || true
+  NEW_STASH="$(git rev-parse -q --verify refs/stash || true)"
+  if [ "$OLD_STASH" != "$NEW_STASH" ]; then
+    stashed=1
+  fi
+
+  if ! git pull origin main; then
+      warn "Failed to pull updates from GitHub. Check your network or git status."
+      if [ "$stashed" -eq 1 ]; then git stash pop >/dev/null 2>&1 || true; fi
+      exit 1
+  fi
+
+  if [ "$stashed" -eq 1 ]; then
+    git stash pop >/dev/null 2>&1 || true
+  fi
+else
+  # Fallback for users who uploaded via ZIP (no .git folder)
+  info "Not a git repository. Fetching latest release via tarball..."
+  if ! curl -sL https://github.com/glowxx/nighty-linux-headless/archive/refs/heads/main.tar.gz | tar -xz --strip-components=1; then
+    warn "Failed to download updates. Check your network."
     exit 1
+  fi
 fi
 
-if [ "$stashed" -eq 1 ]; then
-  git stash pop >/dev/null 2>&1 || true
-fi
 ok "Repository updated to latest version"
 
 # Determine deployment type

@@ -18,9 +18,15 @@ DIR="$(pwd)"
 print_header "DOCKER DEPLOYMENT PROCESS"
 
 if [ ! -f "Nighty.exe" ]; then
-  print_error "Nighty.exe not found in $DIR!"
-  printf "%sPlease upload your licensed Nighty.exe using SFTP (FileZilla/WinSCP), then run this script again.%s\n\n" "$Y" "$N"
-  exit 1
+  if [ -f "nighty.exe" ]; then
+    # Auto-fix lowercase uploads (Linux is case-sensitive)
+    mv nighty.exe Nighty.exe
+  else
+    print_error "Nighty.exe not found!"
+    printf "%sPlease upload your licensed 'Nighty.exe' to: %s%s%s\n" "$Y" "$B" "$DIR" "$N"
+    printf "%sThen rerun this command: %sbash scripts/docker-start.sh%s\n\n" "$Y" "$C" "$N"
+    exit 1
+  fi
 fi
 print_success "Nighty.exe found!"
 
