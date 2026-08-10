@@ -25,10 +25,17 @@ graph LR
     H --> I["webui_guard.py (continuous)"]
     I --> J[watchdog]
     end
-    
-    style B fill:#f9f,stroke:#333,stroke-width:2px
-    style D fill:#bbf,stroke:#333,stroke-width:2px
-    style E fill:#bfb,stroke:#333,stroke-width:2px
+
+    style A fill:#1e293b,stroke:#475569,stroke-width:2px,color:#ffffff
+    style B fill:#db2777,stroke:#f472b6,stroke-width:2px,color:#ffffff
+    style C fill:#1e293b,stroke:#475569,stroke-width:2px,color:#ffffff
+    style D fill:#2563eb,stroke:#60a5fa,stroke-width:2px,color:#ffffff
+    style E fill:#059669,stroke:#34d399,stroke-width:2px,color:#ffffff
+    style F fill:#d97706,stroke:#fbbf24,stroke-width:2px,color:#ffffff
+    style G fill:#1e293b,stroke:#475569,stroke-width:1px,color:#ffffff
+    style H fill:#1e293b,stroke:#475569,stroke-width:1px,color:#ffffff
+    style I fill:#1e293b,stroke:#475569,stroke-width:1px,color:#ffffff
+    style J fill:#1e293b,stroke:#475569,stroke-width:1px,color:#ffffff
 ```
 
 ### 1. Headless GUI Stub (`scripts/repack.py`)
