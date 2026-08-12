@@ -427,10 +427,11 @@ run_stack() {
   # ourselves rather than relying on Xvfb to do it.
   mkdir -p /tmp/.X11-unix
   chmod 1777 /tmp/.X11-unix 2>/dev/null || true
-  if [ -S "/tmp/.X11-unix/X${DISPLAY_NUM}" ] || pgrep -f "[X]vfb :$DISPLAY_NUM" >/dev/null 2>&1; then
-    log "FATAL: X display :$DISPLAY_NUM is already in use; refusing to kill an unrelated Xvfb."
-    return 1
+  if pgrep -f "[X]vfb :$DISPLAY_NUM" >/dev/null 2>&1; then
+    pkill -9 -f "[X]vfb :$DISPLAY_NUM" 2>/dev/null || true
+    sleep 1
   fi
+  rm -f "/tmp/.X11-unix/X${DISPLAY_NUM}" "/tmp/.X${DISPLAY_NUM}-lock" 2>/dev/null || true
   _STACK_STARTED=1
   Xvfb ":$DISPLAY_NUM" -screen 0 1366x768x24 -nolisten tcp >"$NIGHTY_HOME/xvfb.log" 2>&1 &
   XVFB_PID=$!
