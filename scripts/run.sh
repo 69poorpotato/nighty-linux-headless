@@ -422,6 +422,27 @@ run_stack() {
       fi
       ;;
   esac
+  DIAG_DIR="${NIGHTY_DIAG_DIR:-$HERE/diagnostics}"
+  mkdir -p "$DIAG_DIR" 2>/dev/null || true
+
+  cleanup() {
+    log "Shutdown signal received. Stopping stack cleanly..."
+    [ -n "${GUARD_PID:-}" ] && kill -15 "$GUARD_PID" 2>/dev/null || true
+    [ -n "${BRIDGE_LOOP_PID:-}" ] && kill -15 "$BRIDGE_LOOP_PID" 2>/dev/null || true
+    pkill -15 -f "bridge.py" 2>/dev/null || true
+    pkill -15 -f "webui_guard.py" 2>/dev/null || true
+    if [ -n "${WINE_BIN:-}" ] && [ -x "$WINE_BIN" ]; then
+      "$WINE_BIN" wineserver -k 2>/dev/null || true
+    elif command -v wineserver >/dev/null 2>&1; then
+      wineserver -k 2>/dev/null || true
+    fi
+    [ -n "${XVFB_PID:-}" ] && kill -15 "$XVFB_PID" 2>/dev/null || true
+    rm -f "/tmp/.X11-unix/X${DISPLAY_NUM}" "/tmp/.X${DISPLAY_NUM}-lock" 2>/dev/null || true
+    release_instance_guard
+    log "Shutdown complete."
+    exit 0
+  }
+  trap cleanup SIGTERM SIGINT SIGHUP
 
   # Pre-launch config enforcement (notifications off, Web UI creds + web:true).
   python3 "$HERE/scripts/enforce_config.py" || true
@@ -438,7 +459,7 @@ run_stack() {
   fi
   rm -f "/tmp/.X11-unix/X${DISPLAY_NUM}" "/tmp/.X${DISPLAY_NUM}-lock" 2>/dev/null || true
   _STACK_STARTED=1
-  Xvfb ":$DISPLAY_NUM" -screen 0 1366x768x24 -nolisten tcp >"$NIGHTY_HOME/xvfb.log" 2>&1 &
+  Xvfb ":$DISPLAY_NUM" -screen 0 1366x768x24 -nolisten tcp >"$DIAG_DIR/xvfb.log" 2>&1 &
   XVFB_PID=$!
   xvfb_waited=0
   while [ "$xvfb_waited" -lt "$XVFB_TIMEOUT" ]; do

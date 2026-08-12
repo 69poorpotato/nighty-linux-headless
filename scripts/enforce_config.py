@@ -190,17 +190,40 @@ def enforce_web(appdata):
     else:
         msgs.append("web_config ok")
 
-    # nighty.config — web must stay true (hard enforcement)
+    # nighty.config — web must stay true (hard enforcement + auto-recovery from .bak)
     nc_path = os.path.join(appdata, "nighty.config")
     nc = _load(nc_path)
-    if nc is None:
-        msgs.append("nighty.config missing")
+    if nc is None or not os.path.exists(nc_path) or os.path.getsize(nc_path) == 0:
+        bak_pattern = os.path.join(appdata, "nighty.config.bak*")
+        baks = sorted(glob.glob(bak_pattern), key=lambda p: os.path.getmtime(p) if os.path.exists(p) else 0, reverse=True)
+        restored = False
+        for b in baks:
+            d = _load(b)
+            if isinstance(d, dict) and d.get("web") is not None:
+                try:
+                    shutil.copyfile(b, nc_path)
+                    nc = d
+                    msgs.append("nighty.config auto-restored from backup")
+                    restored = True
+                    break
+                except Exception:
+                    pass
+        if not restored:
+            nc = {"web": True}
+            _save(nc_path, nc)
+            msgs.append("nighty.config auto-created with web=true")
     elif nc.get("web") is not True:
         nc["web"] = True
         _save(nc_path, nc)
         msgs.append("nighty.config web -> true")
     else:
         msgs.append("web already true")
+
+    if isinstance(nc, dict) and nc:
+        try:
+            shutil.copyfile(nc_path, os.path.join(appdata, "nighty.config.bak"))
+        except Exception:
+            pass
 
     return "; ".join(msgs)
 
@@ -431,6 +454,90 @@ def sanitize_all_json_encodings(appdata):
     return "healed %d non-ASCII JSON file(s)" % healed if healed else "ok (all JSON clean ASCII)"
 
 
+def _is_mei_in_use(mei_name):
+    """True if any active process in /proc currently references this _MEI directory in its memory maps."""
+    proc_dir = "/proc"
+    if not os.path.isdir(proc_dir):
+        return False
+    try:
+        for entry in os.listdir(proc_dir):
+            if entry.isdigit():
+                maps_file = os.path.join(proc_dir, entry, "maps")
+                try:
+                    with open(maps_file, "r", encoding="utf-8", errors="ignore") as f:
+                        if mei_name in f.read():
+                            return True
+                except Exception:
+                    pass
+    except Exception:
+        pass
+    return False
+
+
+def rotate_and_clean_logs(appdata):
+    """Rotate log files in diagnostics/ and NIGHTY_HOME (capped at 10 MB, keeping last 2 MB).
+    Also cleans stale PyInstaller _MEI* extraction directories from /tmp."""
+    here_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    root_diag = os.path.join(here_dir, "diagnostics")
+    nighty_home = env("NIGHTY_HOME") or os.path.dirname(os.path.dirname(appdata))
+    home_diag = os.path.join(nighty_home, "diagnostics")
+    for d in (root_diag, home_diag):
+        try:
+            os.makedirs(d, exist_ok=True)
+        except OSError:
+            pass
+
+    rotated = 0
+    max_bytes = 10 * 1024 * 1024  # 10 MB
+    keep_bytes = 2 * 1024 * 1024  # 2 MB
+
+    search_dirs = [root_diag, home_diag, nighty_home]
+    for sdir in search_dirs:
+        if not os.path.isdir(sdir):
+            continue
+        try:
+            for f in os.listdir(sdir):
+                if f.endswith(".log"):
+                    p = os.path.join(sdir, f)
+                    try:
+                        sz = os.path.getsize(p)
+                        if sz > max_bytes:
+                            with open(p, "rb") as fp:
+                                fp.seek(sz - keep_bytes)
+                                tail = fp.read()
+                            with open(p, "wb") as fp:
+                                fp.write(b"[truncated log rotation]\n" + tail)
+                            rotated += 1
+                    except Exception:
+                        pass
+        except Exception:
+            pass
+
+    mei_cleaned = 0
+    tmp_dir = os.environ.get("TEMP") or "/tmp"
+    if os.path.isdir(tmp_dir):
+        try:
+            for item in os.listdir(tmp_dir):
+                if item.startswith("_MEI"):
+                    full = os.path.join(tmp_dir, item)
+                    try:
+                        mtime = os.path.getmtime(full)
+                        if (time.time() - mtime) > 1800 and not _is_mei_in_use(item):
+                            shutil.rmtree(full, ignore_errors=True)
+                            mei_cleaned += 1
+                    except Exception:
+                        pass
+        except Exception:
+            pass
+
+    msg = "logs ok"
+    if rotated:
+        msg = "rotated %d log(s)" % rotated
+    if mei_cleaned:
+        msg += ", cleaned %d stale _MEI dir(s)" % mei_cleaned
+    return msg
+
+
 def main():
     appdata = find_appdata()
     if not appdata:
@@ -443,6 +550,7 @@ def main():
     print("[enforce] sounds:", prefetch_sounds(appdata))
     print("[enforce] user_history:", cap_user_history(appdata))
     print("[enforce] json_encoding:", sanitize_all_json_encodings(appdata))
+    print("[enforce] diagnostics:", rotate_and_clean_logs(appdata))
     return 0
 
 
