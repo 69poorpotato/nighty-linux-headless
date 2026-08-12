@@ -75,17 +75,22 @@ case "$(uname -m)" in
      # removes most global barriers while config/box64-nighty.rc restores strict
      # settings only for the crash-prone bundled Go TLS client.
      case "$NIGHTY_BOX64_PROFILE" in
-       safe)     _BB=0; _SM=3; _SF=2; _CR=0 ;;
-       balanced) _BB=1; _SM=1; _SF=1; _CR=0 ;;
-       *) echo "[run] FATAL: unknown NIGHTY_BOX64_PROFILE '$NIGHTY_BOX64_PROFILE' (use safe or balanced)" >&2; exit 2 ;;
+       safe)        _BB=0; _SM=3; _SF=2; _CR=0 ;;
+       balanced)    _BB=1; _SM=1; _SF=1; _CR=0 ;;
+       performance) _BB=1; _SM=1; _SF=0; _CR=1 ;;
+       *) echo "[run] FATAL: unknown NIGHTY_BOX64_PROFILE '$NIGHTY_BOX64_PROFILE' (use safe, balanced, or performance)" >&2; exit 2 ;;
      esac
      : "${BOX64_DYNAREC_BIGBLOCK:=$_BB}"; : "${BOX64_DYNAREC_STRONGMEM:=$_SM}"
      : "${BOX64_DYNAREC_SAFEFLAGS:=$_SF}"; : "${BOX64_DYNAREC_CALLRET:=$_CR}"
+     : "${BOX64_DYNAREC_FASTROUND:=1}"; : "${BOX64_DYNAREC_FASTNAN:=1}"
+     : "${BOX64_DYNAREC_WAIT:=1}"
      if [ -f "$HERE/config/box64-nighty.rc" ]; then
        export BOX64_RCFILE="${BOX64_RCFILE:-$HERE/config/box64-nighty.rc}"
      fi
      export BOX64_DYNAREC_BIGBLOCK BOX64_DYNAREC_STRONGMEM \
-            BOX64_DYNAREC_SAFEFLAGS BOX64_DYNAREC_CALLRET BOX64_RCFILE ;;
+            BOX64_DYNAREC_SAFEFLAGS BOX64_DYNAREC_CALLRET \
+            BOX64_DYNAREC_FASTROUND BOX64_DYNAREC_FASTNAN \
+            BOX64_DYNAREC_WAIT BOX64_RCFILE ;;
 esac
 ulimit -s 8192 2>/dev/null || true
 
