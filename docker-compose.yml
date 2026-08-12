@@ -31,10 +31,14 @@ services:
     volumes:
       # Mount your Nighty.exe (read-only)
       - ./Nighty.exe:/app/Nighty.exe:ro
+      # Mount repacked Nighty_stub.exe to root project directory for easy access & swapping
+      - ./Nighty_stub.exe:/app/Nighty_stub.exe
       # Persist configuration and prefixes
       - ./data:/data
       # Mount dist directory for extensions persistence and write access
       - ./data/dist:/app/dist
+      # Mount diagnostics log folder directly to project root on host
+      - ./diagnostics:/app/diagnostics
       # Mount scripts and config so updates don't require rebuilding the image
       - ./scripts:/app/scripts:ro
       - ./config:/app/config:ro
