@@ -29,6 +29,7 @@ WEBUI_HOST = os.environ.get("WEBUI_HOST", "127.0.0.1")
 WEBUI_PORT = int(os.environ.get("WEBUI_PORT", "8090"))
 HOST = os.environ.get("BRIDGE_HOST", "0.0.0.0")
 PORT = int(os.environ.get("BRIDGE_PORT", "8088"))
+START_TIME = time.time()
 
 STUB = "http://127.0.0.1:%d" % STUB_PORT
 WEBPANEL = "http://%s:%d" % (WEBUI_HOST, WEBUI_PORT)
@@ -1237,7 +1238,7 @@ class H(BaseHTTPRequestHandler):
 
     def do_GET(self):
         try:
-            api_path = self.path.startswith(("/state", "/events", "/ready"))
+            api_path = self.path.startswith(("/state", "/events", "/ready", "/healthz"))
             # Add-another-account mode (set by add_account.sh): re-serve the setup
             # wizard, retitled, even though the box is already onboarded/locked, so
             # a second account can be provisioned. Takes priority over the panel.
@@ -1268,10 +1269,17 @@ class H(BaseHTTPRequestHandler):
                 if self.headers.get("Upgrade", "").lower() == "websocket":
                     return self._proxy_ws()
                 return self._proxy("GET")
-            if self.path.startswith("/ready"):
-                # Stub-free readiness probe for the loading screen to poll.
-                return self._send(json.dumps({"ready": bool(web_up() and not panel_blocked())}),
-                                  "application/json")
+            if self.path in ("/healthz", "/ready") or self.path.startswith(("/healthz?", "/ready?")):
+                up = bool(web_up() and not panel_blocked())
+                resp = {
+                    "status": "ok" if up else "starting",
+                    "backend_running": up,
+                    "ready": up,
+                    "mode": "panel" if up else ("onboarding" if not setup_locked() and not _onboarded() else "loading"),
+                    "uptime_seconds": round(time.time() - START_TIME, 2),
+                    "timestamp": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+                }
+                return self._send(json.dumps(resp), "application/json", code=200 if up else 503)
             if self.path == "/" or self.path.startswith("/ui"):
                 return self._send(build_ui())
             if self.path.startswith("/state"):
