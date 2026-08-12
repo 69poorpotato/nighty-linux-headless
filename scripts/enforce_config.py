@@ -299,7 +299,29 @@ def stop_unsafe_running_profile():
 # Nighty's frozen code; this is the set confirmed to exist on the CDN. Add a
 # name here if a new notification sound shows the same 403.
 SOUND_BASE = "https://nighty.one/download/files/sounds"
-SOUND_FILES = ("connected.mp3", "roleupdates.mp3", "nickupdates.mp3", "nitro_sniped.wav")
+SOUND_FILES = (
+    "connected.mp3",
+    "roleupdates.mp3",
+    "nickupdates.mp3",
+    "relationship.mp3",
+    "typing.wav",
+    "pinged.wav",
+    "giveaway_found.wav",
+    "disconnected.wav",
+    "nitro_sniped.wav",
+)
+# Sound aliases mapping: Nighty checks for local filenames on disk (keys),
+# but fetches target filenames from CDN (values). Pre-creating all disk aliases
+# ensures Nighty's internal download check finds them on disk and never raises HTTP 403.
+SOUND_ALIASES = {
+    "roles.mp3": "roleupdates.mp3",
+    "nicknames.mp3": "nickupdates.mp3",
+    "friends.mp3": "relationship.mp3",
+    "giveaways.wav": "giveaway_found.wav",
+    "nitro.wav": "nitro_sniped.wav",
+    "nitro_sniped.mp3": "nitro_sniped.wav",
+    "nitro.mp3": "nitro_sniped.wav",
+}
 _BROWSER_UA = ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
                "(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36")
 
@@ -317,7 +339,7 @@ def prefetch_sounds(appdata):
     for name in SOUND_FILES:
         path = os.path.join(dest, name)
         try:
-            if os.path.getsize(path) > 0:
+            if os.path.exists(path) and os.path.getsize(path) > 100:
                 have += 1
                 continue
         except OSError:
@@ -336,6 +358,19 @@ def prefetch_sounds(appdata):
             fetched.append(name)
         except Exception as e:
             failed.append("%s (%s)" % (name, e))
+
+    # Ensure aliases exist on disk so Nighty's internal check never triggers urllib 403
+    for alias_name, target_name in SOUND_ALIASES.items():
+        alias_path = os.path.join(dest, alias_name)
+        target_path = os.path.join(dest, target_name)
+        try:
+            if os.path.exists(target_path) and os.path.getsize(target_path) > 100:
+                if not os.path.exists(alias_path) or os.path.getsize(alias_path) <= 100:
+                    shutil.copyfile(target_path, alias_path)
+                    fetched.append(alias_name)
+        except Exception as e:
+            failed.append("alias %s (%s)" % (alias_name, e))
+
     msg = "%d already present" % have
     if fetched:
         msg += ", fetched %d" % len(fetched)
