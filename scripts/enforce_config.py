@@ -299,7 +299,7 @@ def stop_unsafe_running_profile():
 # Nighty's frozen code; this is the set confirmed to exist on the CDN. Add a
 # name here if a new notification sound shows the same 403.
 SOUND_BASE = "https://nighty.one/download/files/sounds"
-SOUND_FILES = ("connected.mp3", "roleupdates.mp3", "nickupdates.mp3")
+SOUND_FILES = ("connected.mp3", "roleupdates.mp3", "nickupdates.mp3", "nitro_sniped.wav")
 _BROWSER_UA = ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
                "(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36")
 
@@ -380,6 +380,22 @@ def cap_user_history(appdata):
         len(items), len(kept), size // 1024, USER_HISTORY_MAX_BYTES // 1024)
 
 
+def sanitize_all_json_encodings(appdata):
+    """Scan all JSON files in AppData and ensure they are ASCII-encoded (ensure_ascii=True).
+    Prevents UnicodeDecodeError ('charmap') under Wine when files contain raw UTF-8 emoji."""
+    healed = 0
+    for root, _, files in os.walk(appdata):
+        for f in files:
+            if f.endswith(".json") or f.endswith(".config"):
+                full_path = os.path.join(root, f)
+                if _has_non_ascii(full_path):
+                    d = _load(full_path)
+                    if d is not None:
+                        _save(full_path, d)
+                        healed += 1
+    return "healed %d non-ASCII JSON file(s)" % healed if healed else "ok (all JSON clean ASCII)"
+
+
 def main():
     appdata = find_appdata()
     if not appdata:
@@ -391,6 +407,7 @@ def main():
     print("[enforce] profile:", enforce_safe_presence(appdata))
     print("[enforce] sounds:", prefetch_sounds(appdata))
     print("[enforce] user_history:", cap_user_history(appdata))
+    print("[enforce] json_encoding:", sanitize_all_json_encodings(appdata))
     return 0
 
 
