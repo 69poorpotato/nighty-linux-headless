@@ -23,6 +23,7 @@ set -a; [ -f "$HERE/.env" ] && . "$HERE/.env"; set +a
 : "${NIGHTY_HOME:=$HOME/.local/share/nighty}"
 : "${WINEPREFIX:=$NIGHTY_HOME/prefix}"
 : "${NIGHTY_STUB:=$HERE/Nighty_stub.exe}"
+: "${NIGHTY_EXE:=$HERE/Nighty.exe}"
 : "${WINE_BIN:=wine64}"
 : "${DISPLAY_NUM:=99}"
 : "${STUB_PORT:=8765}"
@@ -383,7 +384,18 @@ run_stack() {
   fi
   [ "$guard_rc" -eq 0 ] || return "$guard_rc"
 
-  [ -f "$NIGHTY_STUB" ] || { echo "[run] FATAL: $NIGHTY_STUB not found. Run scripts/install.sh first." >&2; return 1; }
+  if [ ! -s "$NIGHTY_STUB" ]; then
+    if [ -f "$NIGHTY_EXE" ]; then
+      log "$NIGHTY_STUB not found or empty — auto-generating from $NIGHTY_EXE..."
+      bash "$HERE/scripts/install.sh" || {
+        log "FATAL: Failed to auto-generate $NIGHTY_STUB from $NIGHTY_EXE."
+        return 1
+      }
+    else
+      echo "[run] FATAL: $NIGHTY_STUB not found and $NIGHTY_EXE is missing. Provide Nighty.exe or run scripts/install.sh." >&2
+      return 1
+    fi
+  fi
   if ! python3 "$HERE/scripts/preflight.py" wine "$WINE_BIN"; then
     for wine_candidate in "$NIGHTY_HOME/wine/bin/wine64" "$NIGHTY_HOME/wine/bin/wine"; do
       if [ -x "$wine_candidate" ]; then
@@ -472,7 +484,7 @@ run_stack() {
   done
   if ! kill -0 "$XVFB_PID" 2>/dev/null || [ ! -S "/tmp/.X11-unix/X${DISPLAY_NUM}" ]; then
     log "FATAL: Xvfb failed to become ready on :$DISPLAY_NUM within ${XVFB_TIMEOUT}s."
-    tail -n 20 "$NIGHTY_HOME/xvfb.log" 2>/dev/null || true
+    tail -n 20 "$DIAG_DIR/xvfb.log" 2>/dev/null || true
     return 1
   fi
 
@@ -496,6 +508,16 @@ run_stack() {
   # within BOOT_TIMEOUT — some Wine builds stall during first-prefix init
   # with no error, well before Nighty's own code would ever hang or crash.
   ( while true; do
+      if [ ! -s "$NIGHTY_STUB" ]; then
+        if [ -f "$NIGHTY_EXE" ]; then
+          log "$NIGHTY_STUB was removed or emptied — regenerating from $NIGHTY_EXE..."
+          bash "$HERE/scripts/install.sh" || {
+            log "ERROR: Failed to regenerate $NIGHTY_STUB — retrying in 5s..."
+            sleep 5
+            continue
+          }
+        fi
+      fi
       python3 "$HERE/scripts/rotate_logs.py" >/dev/null 2>&1 || true
       python3 "$HERE/scripts/enforce_config.py" >/dev/null 2>&1 || true
       mkdir -p "$HERE/dist/ws_extensions" "$NIGHTY_HOME/dist/ws_extensions" 2>/dev/null || true

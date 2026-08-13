@@ -80,7 +80,8 @@ printf '\n'
 # Store credentials as Compose secrets, never in docker-compose.yml or process
 # arguments. Newlines are intentionally unsupported by Docker secret files.
 umask 077
-mkdir -p docker-secrets
+mkdir -p docker-secrets data diagnostics
+[ -f "Nighty_stub.exe" ] || touch Nighty_stub.exe
 printf '%s\n' "$WEBUI_USER" > docker-secrets/webui_username
 printf '%s\n' "$WEBUI_PASS" > docker-secrets/webui_password
 

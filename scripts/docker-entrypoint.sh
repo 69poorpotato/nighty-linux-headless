@@ -33,6 +33,7 @@ fi
 
 # Default env vars if not provided by docker-compose
 export NIGHTY_EXE="${NIGHTY_EXE:-/app/Nighty.exe}"
+export NIGHTY_STUB="${NIGHTY_STUB:-/app/Nighty_stub.exe}"
 export NIGHTY_HOME="${NIGHTY_HOME:-/data/nighty}"
 export WINEPREFIX="${WINEPREFIX:-$NIGHTY_HOME/prefix}"
 export PYTHONIOENCODING="${PYTHONIOENCODING:-utf-8}"
@@ -44,6 +45,13 @@ if [ ! -f "$NIGHTY_EXE" ]; then
     echo "ERROR: Nighty.exe not found at $NIGHTY_EXE"
     echo "Please mount your licensed Nighty.exe into the container."
     echo "Example: -v /path/to/your/Nighty.exe:/app/Nighty.exe:ro"
+    exit 1
+fi
+
+if [ -d "$NIGHTY_STUB" ]; then
+    echo "ERROR: $NIGHTY_STUB was mounted as a directory." >&2
+    echo "Docker auto-created a directory because Nighty_stub.exe was missing on host before compose up." >&2
+    echo "Please remove the directory on your host, run 'touch Nighty_stub.exe', and re-run." >&2
     exit 1
 fi
 

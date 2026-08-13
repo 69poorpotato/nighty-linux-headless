@@ -108,7 +108,7 @@ To support non-x86 architectures (like ARM64 on Raspberry Pi), the wrapper injec
 - **x86-64 API Translation (Wine):** The Windows binary `Nighty.exe` calls `Win32` APIs. Wine catches these and translates them into native POSIX/Linux system calls.
 - **CPU Instruction Emulation (Box64):** Because the binary contains x86-64 machine code, Wine itself must be compiled for x86-64. On an ARM host, the kernel cannot execute this. We wrap Wine with **Box64**, a dynamic recompiler (Dynarec). Box64 reads the x86-64 instructions and recompiles them into native ARM64 instructions on the fly.
 - **Library Wrapping:** Box64 is highly optimized. Instead of emulating Linux libraries (like `libX11`, `libc`), it maps calls from the emulated x86-64 Wine directly to the native ARM64 system libraries on your host. This is why the installer ensures native `libX11` and `libXcomposite` packages are installed.
-- **Tuning:** Emulating Rich-Presence network blocking can cause severe lag under Box64 (crashing the Discord bot heartbeat). The script injects tuning parameters (`NIGHTY_BOX64_PROFILE=balanced`) and explicitly blackholes external blocking API domains (`lrclib.net`) in `/etc/hosts` to keep the emulation loop incredibly fast.
+- **Tuning:** Emulating Rich-Presence network blocking can cause severe lag under Box64 (crashing the Discord bot heartbeat). The script provides tuning profiles (`NIGHTY_BOX64_PROFILE`: `safe`, `balanced`, or `performance`) and explicitly blackholes external blocking API domains (`lrclib.net`) in `/etc/hosts` to keep the emulation loop fast and reliable.
 
 ---
 
@@ -145,13 +145,14 @@ Everything Nighty and this wrapper persist lives **outside the repository**, whi
 
 ---
 
-## Ports
+## Ports & Health Endpoints
 
-| Port | Bind        | Purpose                                  |
-|------|-------------|------------------------------------------|
-| 8088 | LAN (0.0.0.0) | The bridge — open this in a browser.    |
-| 8090 | loopback    | Nighty's native Web UI (proxied by 8088).|
-| 8765 | loopback    | Stub control server (onboarding only).   |
+| Port / Endpoint | Bind | Purpose |
+|-----------------|------|---------|
+| `8088` (`/`) | LAN (0.0.0.0) | The bridge — open this in a browser for Web UI / onboarding. |
+| `8088` (`/healthz` or `/ready`) | LAN (0.0.0.0) | JSON health check & readiness probe for Docker / monitoring tools. |
+| `8090` | loopback | Nighty's native Web UI (proxied by 8088). |
+| `8765` | loopback | Stub control server (onboarding only). |
 
 > [!WARNING]
 > Only 8088 is meant to be reachable from the LAN. Keep 8090 and 8765 on loopback to ensure security.
