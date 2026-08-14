@@ -63,7 +63,8 @@ fi
 # Ensure the container user can read the secrets regardless of UID
 chmod 700 docker-secrets
 chmod 644 docker-secrets/* 2>/dev/null || true
-chown -R "$PUID:$PGID" data 2>/dev/null || true
+chown -R "$PUID:$PGID" data diagnostics 2>/dev/null || true
+chmod -R 775 diagnostics 2>/dev/null || true
 
 print_step "Stopping existing containers (if any)..."
 docker compose down 2>/dev/null || true

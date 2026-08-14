@@ -209,6 +209,17 @@ Select the **Reset configuration** option matching your deployment method to saf
 
 ## Troubleshooting
 
+### 📂 Easy Diagnostics & Log Sharing
+
+All diagnostic logs and auto-generated system summaries are continuously collected and rotated directly in the **`diagnostics/`** directory in the project root:
+- **`system_info.txt`** — Complete sanitized environment, memory, disk, network, and crash signature report.
+- **`backend.log`** — Wine, emulator, and backend execution stream.
+- **`nighty.log`** — Nighty bot internal Discord engine and command logs.
+- **`bridge.log`** — Web UI bridge & proxy log.
+- **`guard.log` & `xvfb.log`** — Configuration guard and virtual display logs.
+
+If you ever encounter an issue or need help, simply share the files from your **`diagnostics/`** folder — all private tokens and passwords are automatically redacted.
+
 > [!TIP]
 > **"Nighty is already running"**
 > This is the single-instance guard working. Open the panel URL printed by the command. If the reported process is unhealthy, inspect `systemctl status nighty` and `journalctl -u nighty -f`; do not start a competing copy against the same ports and Wine prefix.

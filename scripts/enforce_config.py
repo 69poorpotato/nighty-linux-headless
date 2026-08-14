@@ -474,11 +474,38 @@ def _is_mei_in_use(mei_name):
     return False
 
 
+def sync_nighty_log(appdata, diag_dir=None):
+    """Ensure AppData/nighty.log is mirrored / copied to the diagnostics directory."""
+    if not appdata:
+        return
+    src = os.path.join(appdata, "nighty.log")
+    if not os.path.isfile(src):
+        return
+    if not diag_dir:
+        diag_dir = os.environ.get("NIGHTY_DIAG_DIR")
+        if not diag_dir:
+            here_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+            diag_dir = os.path.join(here_dir, "diagnostics")
+    try:
+        os.makedirs(diag_dir, exist_ok=True)
+        dst = os.path.join(diag_dir, "nighty.log")
+        try:
+            src_sz = os.path.getsize(src)
+            dst_sz = os.path.getsize(dst) if os.path.exists(dst) else -1
+            if src_sz != dst_sz:
+                shutil.copyfile(src, dst)
+        except OSError:
+            pass
+    except Exception:
+        pass
+
+
 def rotate_and_clean_logs(appdata):
     """Rotate log files in diagnostics/ and NIGHTY_HOME (capped at 10 MB, keeping last 2 MB).
-    Also cleans stale PyInstaller _MEI* extraction directories from /tmp."""
+    Also cleans stale PyInstaller _MEI* extraction directories from /tmp and mirrors nighty.log."""
+    diag_env = os.environ.get("NIGHTY_DIAG_DIR")
     here_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    root_diag = os.path.join(here_dir, "diagnostics")
+    root_diag = diag_env or os.path.join(here_dir, "diagnostics")
     nighty_home = env("NIGHTY_HOME") or os.path.dirname(os.path.dirname(appdata))
     home_diag = os.path.join(nighty_home, "diagnostics")
     for d in (root_diag, home_diag):
@@ -486,6 +513,8 @@ def rotate_and_clean_logs(appdata):
             os.makedirs(d, exist_ok=True)
         except OSError:
             pass
+
+    sync_nighty_log(appdata, root_diag)
 
     rotated = 0
     max_bytes = 10 * 1024 * 1024  # 10 MB

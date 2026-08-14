@@ -53,6 +53,7 @@ def main():
             if appdata:
                 ec.enforce_web(appdata)
                 ec.enforce_safe_presence(appdata)     # heal encoding; disable only RPC auto-start
+                ec.sync_nighty_log(appdata)           # ensure diagnostics/nighty.log is mirrored
             # Stop an RPC preset already running in memory (no-op for safe profiles).
             # Throttled: this is the only stub call in the loop, so it is the part
             # that contends with the bot's event loop under emulation.

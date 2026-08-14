@@ -1,17 +1,26 @@
 #!/usr/bin/env python3
-"""Small, side-effect-free startup/install checks for Nighty headless."""
+"""Small, side-effect-free startup/install checks and diagnostics generator for Nighty headless."""
 
 from __future__ import annotations
 
 import argparse
 import ctypes
 import ctypes.util
+import datetime
+import glob
 import os
 from pathlib import Path
+import platform
+import re
 import shutil
+import socket
+import ssl
 import struct
+import subprocess
 import sys
-from typing import List, Optional, Tuple
+from typing import Dict, List, Optional, Tuple
+import urllib.error
+import urllib.request
 
 
 PE_MACHINES = {
@@ -30,10 +39,22 @@ WINE_NATIVE_LIBS = (
     ("Xi", "libxi6", True),
     ("Xcursor", "libxcursor1", True),
     ("Xinerama", "libxinerama1", True),
-    # Qt may probe this helper, but the existing RPi5 deployment is healthy
-    # without it. Keep it visible in diagnostics without blocking upgrades.
     ("xkbregistry", "libxkbregistry0", False),
 )
+
+TOKEN_RE_RAW = re.compile(r"\b([A-Za-z0-9_-]{24,32}\.[A-Za-z0-9_-]{6}\.[A-Za-z0-9_-]{20,45})\b")
+MFA_RE_RAW = re.compile(r"\b(mfa\.[A-Za-z0-9_-]{40,})\b")
+KEY_VALUE_TOKEN = re.compile(r"""(["']?(?:token|license|password|secret|auth)["']?\s*[:=]\s*["']?)([^"'\r\n\s]{6,})(["']?)""", re.IGNORECASE)
+
+
+def redact_secrets(text: str) -> str:
+    """Mask tokens, license keys, and secrets from diagnostic outputs."""
+    if not text:
+        return ""
+    text = TOKEN_RE_RAW.sub(lambda m: m.group(1)[:6] + "...REDACTED..." + m.group(1)[-4:], text)
+    text = MFA_RE_RAW.sub(lambda m: m.group(1)[:8] + "...REDACTED..." + m.group(1)[-4:], text)
+    text = KEY_VALUE_TOKEN.sub(r"\1***REDACTED***\3", text)
+    return text
 
 
 class PreflightError(RuntimeError):
@@ -140,13 +161,7 @@ def check_wine(value: str) -> int:
     return 0
 
 
-import socket
-import ssl
-import urllib.error
-import urllib.request
-
-
-def check_network(quiet: bool = False) -> int:
+def run_network_checks(quiet: bool = False) -> Tuple[int, List[Tuple[str, str, bool]]]:
     """Run comprehensive network diagnostics (DNS, TLS, HTTP/Cloudflare, TCP ports)."""
     results: List[Tuple[str, str, bool]] = []
     has_error = False
@@ -180,7 +195,7 @@ def check_network(quiet: bool = False) -> int:
             results.append(("TLS discord.com", f"HTTP {resp.status} OK", True))
     except urllib.error.HTTPError as e:
         if e.code == 403:
-            results.append(("TLS discord.com", f"HTTP 403 Forbidden (Possible Cloudflare / Anti-Bot block)", False))
+            results.append(("TLS discord.com", "HTTP 403 Forbidden (Possible Cloudflare / Anti-Bot block)", False))
             has_error = True
         else:
             results.append(("TLS discord.com", f"HTTP {e.code} ({e.reason})", True))
@@ -211,7 +226,221 @@ def check_network(quiet: bool = False) -> int:
             print(f"  [{status}] {test_name:<30}: {detail}")
         print("===================================\n")
 
-    return 1 if has_error else 0
+    return (1 if has_error else 0), results
+
+
+def check_network(quiet: bool = False) -> int:
+    code, _ = run_network_checks(quiet)
+    return code
+
+
+def get_mem_info() -> Dict[str, str]:
+    mem = {}
+    if os.path.exists("/proc/meminfo"):
+        try:
+            with open("/proc/meminfo", "r", encoding="utf-8") as f:
+                for line in f:
+                    parts = line.split(":")
+                    if len(parts) == 2:
+                        k = parts[0].strip()
+                        v = parts[1].strip()
+                        if k in ("MemTotal", "MemAvailable", "MemFree", "SwapTotal", "SwapFree"):
+                            mem[k] = v
+        except Exception:
+            pass
+    return mem
+
+
+def get_disk_info(paths: List[Path]) -> Dict[str, str]:
+    info = {}
+    for p in paths:
+        try:
+            if p.exists():
+                usage = shutil.disk_usage(p)
+                total_gb = usage.total / (1024**3)
+                free_gb = usage.free / (1024**3)
+                used_gb = usage.used / (1024**3)
+                pct = (usage.used / usage.total) * 100 if usage.total else 0
+                info[str(p)] = f"{used_gb:.1f}GB / {total_gb:.1f}GB used ({pct:.1f}%), {free_gb:.1f}GB free"
+        except Exception as e:
+            info[str(p)] = f"error: {e}"
+    return info
+
+
+def scan_recent_errors(diag_dir: Path) -> List[str]:
+    """Scan latest log files in diag_dir and extract critical signatures/tracebacks."""
+    findings = []
+    error_patterns = [
+        re.compile(r"Traceback \(most recent call last\):", re.IGNORECASE),
+        re.compile(r"^[A-Za-z_][\w.]*(?:Error|Exception|Warning|Panic)\b.*", re.IGNORECASE),
+        re.compile(r"UnicodeDecodeError.*", re.IGNORECASE),
+        re.compile(r"UnicodeEncodeError.*", re.IGNORECASE),
+        re.compile(r"panic:.*", re.IGNORECASE),
+        re.compile(r"fatal error:.*", re.IGNORECASE),
+        re.compile(r"\[signal SIGSEGV.*", re.IGNORECASE),
+        re.compile(r"Windows fatal exception.*", re.IGNORECASE),
+        re.compile(r"HTTP 403.*", re.IGNORECASE),
+        re.compile(r"HTTP 500.*", re.IGNORECASE),
+        re.compile(r"10003.*NotFound", re.IGNORECASE),
+        re.compile(r"10062.*Unknown interaction", re.IGNORECASE),
+        re.compile(r"backend panel timed out after", re.IGNORECASE),
+    ]
+
+    log_files = ["backend.log", "nighty.log", "bridge.log", "guard.log", "xvfb.log"]
+    for name in log_files:
+        path = diag_dir / name
+        if not path.is_file():
+            continue
+        try:
+            with path.open("rb") as f:
+                f.seek(0, os.SEEK_END)
+                size = f.tell()
+                f.seek(max(0, size - 256 * 1024))
+                tail = f.read().decode("utf-8", errors="replace").splitlines()
+            
+            for line in tail[-100:]:
+                for pat in error_patterns:
+                    if pat.search(line):
+                        findings.append(f"[{name}] {line.strip()}")
+                        break
+        except Exception:
+            pass
+
+    # Deduplicate preserving order
+    seen = set()
+    deduped = []
+    for item in findings:
+        clean = redact_secrets(item)
+        if clean not in seen:
+            seen.add(clean)
+            deduped.append(clean)
+    return deduped[-20:]
+
+
+def generate_report(diag_dir: Optional[Path] = None, outfile: Optional[Path] = None, quiet: bool = False) -> int:
+    """Generate a complete, self-contained, sanitized system and diagnostics report."""
+    if diag_dir is None:
+        diag_env = os.environ.get("NIGHTY_DIAG_DIR")
+        if diag_env:
+            diag_dir = Path(diag_env)
+        else:
+            diag_dir = Path(__file__).resolve().parents[1] / "diagnostics"
+    
+    diag_dir.mkdir(parents=True, exist_ok=True)
+    out_path = outfile or (diag_dir / "system_info.txt")
+
+    lines: List[str] = []
+    now_utc = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
+    lines.append("=" * 80)
+    lines.append("NIGHTY LINUX HEADLESS - SYSTEM & DIAGNOSTICS REPORT")
+    lines.append(f"Generated: {now_utc}")
+    lines.append("=" * 80)
+    lines.append("")
+
+    # 1. Host & Environment
+    lines.append("── [1] System & Host Environment ──")
+    lines.append(f"Platform:     {platform.platform()}")
+    lines.append(f"Architecture: {platform.machine()} (Python: {platform.python_version()})")
+    lines.append(f"CPU Cores:    {os.cpu_count() or 'Unknown'}")
+    in_docker = os.path.exists("/.dockerenv") or os.path.exists("/run/.containerenv")
+    lines.append(f"Environment:  {'Docker Container' if in_docker else 'Bare Metal Host'}")
+    if hasattr(os, "getuid"):
+        lines.append(f"Process UID:  {os.getuid()} / GID: {os.getgid()}")
+    lines.append(f"Diag Dir:     {diag_dir}")
+    lines.append("")
+
+    # 2. Resources (Memory & Disk)
+    lines.append("── [2] Memory & Storage ──")
+    mem = get_mem_info()
+    if mem:
+        lines.append(f"RAM Total:    {mem.get('MemTotal', 'N/A')}")
+        lines.append(f"RAM Avail:    {mem.get('MemAvailable', mem.get('MemFree', 'N/A'))}")
+        lines.append(f"Swap Total:   {mem.get('SwapTotal', 'N/A')}")
+        lines.append(f"Swap Free:    {mem.get('SwapFree', 'N/A')}")
+    else:
+        lines.append("RAM info:     N/A (non-Linux procfs)")
+
+    check_paths = [Path("/"), diag_dir]
+    data_dir = os.environ.get("NIGHTY_HOME") or os.environ.get("DATA_DIR")
+    if data_dir:
+        check_paths.append(Path(data_dir))
+    disk = get_disk_info(check_paths)
+    for p_str, d_info in disk.items():
+        lines.append(f"Disk [{p_str}]: {d_info}")
+    lines.append("")
+
+    # 3. Emulation & Dependencies
+    lines.append("── [3] Runtime & Emulation Stack ──")
+    wine_bin = os.environ.get("WINE_BIN", "wine64")
+    resolved_wine = resolve_command(wine_bin)
+    lines.append(f"WINE_BIN:     {wine_bin} (resolved: {resolved_wine or 'NOT FOUND'})")
+    
+    box64_profile = os.environ.get("NIGHTY_BOX64_PROFILE", "balanced")
+    lines.append(f"Box64 Profile:{box64_profile}")
+    
+    missing_libs = missing_native_libs()
+    if not missing_libs:
+        lines.append("Native X11:   All required runtime libraries present (OK)")
+    else:
+        req = [lib for lib, _, req in missing_libs if req]
+        opt = [lib for lib, _, req in missing_libs if not req]
+        if req:
+            lines.append(f"Native X11:   MISSING REQUIRED: {', '.join(req)}")
+        if opt:
+            lines.append(f"Native X11:   Missing optional: {', '.join(opt)}")
+
+    ca_bundle = os.environ.get("SSL_CERT_FILE", "/etc/ssl/certs/ca-certificates.crt")
+    lines.append(f"SSL CA Certs: {ca_bundle} ({'Present' if os.path.isfile(ca_bundle) else 'Missing'})")
+    lines.append("")
+
+    # 4. Network Status
+    lines.append("── [4] Network Diagnostics ──")
+    _, net_results = run_network_checks(quiet=True)
+    for test_name, detail, ok in net_results:
+        status_lbl = "OK" if ok else "FAIL"
+        lines.append(f"[{status_lbl:4s}] {test_name:<28}: {detail}")
+    lines.append("")
+
+    # 5. Log Files in Diagnostics Directory
+    lines.append("── [5] Files in Diagnostics Folder ──")
+    try:
+        found_files = sorted(diag_dir.glob("*"))
+        if found_files:
+            for item in found_files:
+                if item.is_file():
+                    sz = item.stat().st_size
+                    sz_str = f"{sz / 1024:.1f} KB" if sz < 1024 * 1024 else f"{sz / (1024 * 1024):.2f} MB"
+                    mtime = datetime.datetime.fromtimestamp(item.stat().st_mtime, tz=datetime.timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
+                    lines.append(f"  • {item.name:<25} {sz_str:>10}  (modified {mtime})")
+        else:
+            lines.append("  (diagnostics folder is currently empty)")
+    except Exception as e:
+        lines.append(f"  Error reading diag dir: {e}")
+    lines.append("")
+
+    # 6. Recent Error / Crash Signatures
+    lines.append("── [6] Recent Errors / Warnings in Logs ──")
+    errs = scan_recent_errors(diag_dir)
+    if errs:
+        for err in errs:
+            lines.append(f"  ! {err}")
+    else:
+        lines.append("  (No critical errors or tracebacks detected in recent log tails)")
+    lines.append("")
+    lines.append("=" * 80)
+    lines.append("END OF REPORT - Everything in this folder can be safely attached to support tickets.")
+    lines.append("=" * 80)
+
+    report_content = "\n".join(lines) + "\n"
+    try:
+        out_path.write_text(report_content, encoding="utf-8", errors="replace")
+        if not quiet:
+            print(f"[diag] Diagnostics summary saved to: {out_path}")
+            print(report_content)
+        return 0
+    except OSError as exc:
+        print(f"[diag] ERROR: Cannot write report to {out_path}: {exc}", file=sys.stderr)
+        return 1
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -226,6 +455,10 @@ def build_parser() -> argparse.ArgumentParser:
     wine.add_argument("path")
     diag = sub.add_parser("diag", help="run network and environment diagnostics")
     diag.add_argument("--quiet", action="store_true")
+    report = sub.add_parser("report", help="generate full system_info.txt diagnostics report")
+    report.add_argument("--diag-dir", type=Path, default=None, help="path to diagnostics directory")
+    report.add_argument("--outfile", type=Path, default=None, help="path to output report file")
+    report.add_argument("--quiet", action="store_true", help="do not print to stdout")
     return parser
 
 
@@ -238,10 +471,12 @@ def main(argv: Optional[List[str]] = None) -> int:
     if args.command == "wine":
         return check_wine(args.path)
     if args.command == "diag":
-        return check_network(args.quiet)
+        code, _ = check_network(args.quiet)
+        return code
+    if args.command == "report":
+        return generate_report(args.diag_dir, args.outfile, args.quiet)
     return 2
 
 
 if __name__ == "__main__":
     raise SystemExit(main())
-

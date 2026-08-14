@@ -35,10 +35,12 @@ fi
 export NIGHTY_EXE="${NIGHTY_EXE:-/app/Nighty.exe}"
 export NIGHTY_STUB="${NIGHTY_STUB:-/app/Nighty_stub.exe}"
 export NIGHTY_HOME="${NIGHTY_HOME:-/data/nighty}"
+export NIGHTY_DIAG_DIR="${NIGHTY_DIAG_DIR:-/app/diagnostics}"
 export WINEPREFIX="${WINEPREFIX:-$NIGHTY_HOME/prefix}"
 export PYTHONIOENCODING="${PYTHONIOENCODING:-utf-8}"
 export SSL_CERT_FILE="${SSL_CERT_FILE:-/etc/ssl/certs/ca-certificates.crt}"
 export SSL_CERT_DIR="${SSL_CERT_DIR:-/etc/ssl/certs}"
+mkdir -p "$NIGHTY_DIAG_DIR" 2>/dev/null || true
 
 # Check if the executable is mounted
 if [ ! -f "$NIGHTY_EXE" ]; then

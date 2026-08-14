@@ -75,6 +75,30 @@ class NetworkDiagnosticsTests(unittest.TestCase):
         self.assertIn(result, (0, 1))
 
 
+class DiagnosticsReportTests(unittest.TestCase):
+    def test_redact_secrets_masks_tokens(self) -> None:
+        raw = "Logged in with token: MTIzNDU2Nzg5MDEyMzQ1Njc4OQ.ABCDEF.GHIJKLMNOPQRSTUVWXYZ12345 and mfa.abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ1234567890"
+        redacted = PREFLIGHT.redact_secrets(raw)
+        self.assertNotIn("MTIzNDU2Nzg5MDEyMzQ1Njc4OQ.ABCDEF", redacted)
+        self.assertNotIn("mfa.abcdefghijklmnopqrstuvwxyz", redacted)
+        self.assertIn("REDACTED", redacted)
+
+    def test_generate_report_writes_file(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            diag_dir = Path(tmp)
+            (diag_dir / "backend.log").write_text("CTL server up\nTraceback (most recent call last):\nValueError: test error\n", encoding="utf-8")
+            report_file = diag_dir / "system_info.txt"
+            code = PREFLIGHT.generate_report(diag_dir=diag_dir, outfile=report_file, quiet=True)
+            self.assertEqual(code, 0)
+            self.assertTrue(report_file.is_file())
+            content = report_file.read_text(encoding="utf-8")
+            self.assertIn("SYSTEM & DIAGNOSTICS REPORT", content)
+            self.assertIn("Memory & Storage", content)
+            self.assertIn("Network Diagnostics", content)
+            self.assertIn("backend.log", content)
+            self.assertIn("ValueError: test error", content)
+
+
 if __name__ == "__main__":
     unittest.main()
 

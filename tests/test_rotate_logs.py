@@ -42,6 +42,15 @@ class RotateLogsTests(unittest.TestCase):
             self.assertEqual((Path(tmp) / "backend.log.1").read_text(encoding="utf-8"), "log round 2")
             self.assertEqual((Path(tmp) / "backend.log.2").read_text(encoding="utf-8"), "log round 1")
 
+    def test_all_diagnostics_targets_rotated(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            for name in ["backend.log", "bridge.log", "guard.log", "xvfb.log", "stub_webview.log", "nighty.log"]:
+                p = tmp_path / name
+                p.write_text("a" * 500, encoding="utf-8")
+                self.assertTrue(rotate_logs.rotate_log_file(p, max_bytes=100, max_backups=2))
+                self.assertTrue((tmp_path / f"{name}.1").is_file())
+
 
 if __name__ == "__main__":
     unittest.main()

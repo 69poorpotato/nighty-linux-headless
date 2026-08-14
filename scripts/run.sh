@@ -44,14 +44,16 @@ set -a; [ -f "$HERE/.env" ] && . "$HERE/.env"; set +a
 # loading screen alive forever even though the first-stage watchdog has exited.
 : "${WEBUI_BOOT_TIMEOUT:=180}"
 : "${CLEAN_STALE_MEI:=1}"
-mkdir -p "$NIGHTY_HOME"
+: "${NIGHTY_DIAG_DIR:=$HERE/diagnostics}"
+mkdir -p "$NIGHTY_HOME" "$NIGHTY_DIAG_DIR"
+export NIGHTY_DIAG_DIR
 
 export WINEPREFIX
 export WINEARCH=win64
 export WINEDEBUG=-all
 export DISPLAY=":$DISPLAY_NUM"
 export NIGHTY_STUB_PORT="$STUB_PORT"
-export NIGHTY_STUB_LOG="${NIGHTY_STUB_LOG:-Z:$NIGHTY_HOME/stub_webview.log}"
+export NIGHTY_STUB_LOG="${NIGHTY_STUB_LOG:-Z:$NIGHTY_DIAG_DIR/stub_webview.log}"
 # Headless DLL overrides. Nighty's GUI is stubbed out and the backend is pure
 # Python, so we disable the Windows components that only crash or hang on a
 # headless box: .NET (mscoree), Internet Explorer (mshtml — its first-run calls
@@ -490,14 +492,14 @@ run_stack() {
 
   # Continuous Web UI hard-enforcement.
   if [ "$ENFORCE_WEBUI" = "1" ]; then
-    python3 "$HERE/scripts/webui_guard.py" >>"$NIGHTY_HOME/guard.log" 2>&1 &
+    python3 "$HERE/scripts/webui_guard.py" >>"$NIGHTY_DIAG_DIR/guard.log" 2>&1 &
     GUARD_PID=$!
   fi
 
   # Web UI bridge — kept alive in its own loop.
   ( while true; do
-      python3 "$HERE/scripts/bridge.py" >>"$NIGHTY_HOME/bridge.log" 2>&1
-      echo "[bridge] $(date '+%H:%M:%S') exited — restarting in 3s" >>"$NIGHTY_HOME/bridge.log"
+      python3 "$HERE/scripts/bridge.py" >>"$NIGHTY_DIAG_DIR/bridge.log" 2>&1
+      echo "[bridge] $(date '+%H:%M:%S') exited — restarting in 3s" >>"$NIGHTY_DIAG_DIR/bridge.log"
       sleep 3
     done ) &
   BRIDGE_LOOP_PID=$!
@@ -520,9 +522,10 @@ run_stack() {
       fi
       python3 "$HERE/scripts/rotate_logs.py" >/dev/null 2>&1 || true
       python3 "$HERE/scripts/enforce_config.py" >/dev/null 2>&1 || true
+      python3 "$HERE/scripts/preflight.py" report --diag-dir "$NIGHTY_DIAG_DIR" --quiet >/dev/null 2>&1 || true
       mkdir -p "$HERE/dist/ws_extensions" "$NIGHTY_HOME/dist/ws_extensions" 2>/dev/null || true
       log "launching backend ($NIGHTY_STUB)…"
-      "${NIGHTY_WINE_COMMAND[@]}" "$NIGHTY_STUB" >>"$NIGHTY_HOME/backend.log" 2>&1 &
+      "${NIGHTY_WINE_COMMAND[@]}" "$NIGHTY_STUB" >>"$NIGHTY_DIAG_DIR/backend.log" 2>&1 &
       BACKEND_PID=$!
 
       (
@@ -541,7 +544,12 @@ run_stack() {
           waited=$((waited + 5))
         done
         if [ "$stub_ready" -ne 1 ] && kill -0 "$BACKEND_PID" 2>/dev/null; then
-          log "backend boot timed out after ${BOOT_TIMEOUT}s (stub never answered on :${STUB_PORT}) — killing and retrying."
+          log "backend boot timed out after ${BOOT_TIMEOUT}s (stub never answered on :${STUB_PORT}). Dumping backend log tail..."
+          echo "[run] === BACKEND LOG TAIL (LAST 25 LINES) ===" >&2
+          tail -n 25 "$NIGHTY_DIAG_DIR/backend.log" 2>/dev/null >&2 || true
+          echo "[run] ==========================================" >&2
+          python3 "$HERE/scripts/preflight.py" report --diag-dir "$NIGHTY_DIAG_DIR" --quiet >/dev/null 2>&1 || true
+          log "killing unresponsive backend and retrying."
           kill -9 "$BACKEND_PID" 2>/dev/null || true
           exit 0
         fi
@@ -558,7 +566,11 @@ run_stack() {
         done
         if kill -0 "$BACKEND_PID" 2>/dev/null; then
           log "backend panel timed out after ${WEBUI_BOOT_TIMEOUT}s (stub is up but Web UI never answered on :${WEBUI_PORT}). Running network diagnostics..."
-          python3 "$HERE/scripts/preflight.py" diag >>"$NIGHTY_HOME/backend.log" 2>&1 || true
+          python3 "$HERE/scripts/preflight.py" diag >>"$NIGHTY_DIAG_DIR/backend.log" 2>&1 || true
+          python3 "$HERE/scripts/preflight.py" report --diag-dir "$NIGHTY_DIAG_DIR" --quiet >/dev/null 2>&1 || true
+          echo "[run] === BACKEND LOG TAIL (LAST 25 LINES) ===" >&2
+          tail -n 25 "$NIGHTY_DIAG_DIR/backend.log" 2>/dev/null >&2 || true
+          echo "[run] ==========================================" >&2
           log "killing unresponsive backend and retrying."
           kill -9 "$BACKEND_PID" 2>/dev/null || true
         fi
@@ -585,7 +597,7 @@ Usage: bash scripts/run.sh [COMMAND]
 Commands:
   once        Start the whole stack now, in this terminal (Ctrl+C to stop).
   autostart   Install + enable a systemd service so it starts on every boot.
-  diag        Run environment and network diagnostics.
+  diag        Show environment and network diagnostics.
   --run       Same as 'once' (this is what the systemd service uses).
   help        Show this help.
 
@@ -598,7 +610,7 @@ EOF
 case "${1:-}" in
   once|--run|run|--service) run_stack "${1:-}"; exit $? ;;
   autostart|--autostart)    setup_autostart; exit $? ;;
-  diag|--diag)              bash "$HERE/scripts/diag.sh"; exit $? ;;
+  diag|--diag)              python3 "$HERE/scripts/preflight.py" report --diag-dir "${NIGHTY_DIAG_DIR:-$HERE/diagnostics}"; exit $? ;;
   -h|--help|help)           usage; exit 0 ;;
   "")                       : ;;   # no command → interactive menu below
   *) echo "Unknown command: $1" >&2; usage >&2; exit 1 ;;

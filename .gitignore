@@ -2,6 +2,8 @@
 Nighty.exe
 Nighty_stub.exe
 *.exe
+*.zip
+*.tar.gz
 
 # ─── Local secrets / environment ───
 .env
@@ -13,8 +15,16 @@ docker-secrets/
 prefix/
 drive_c/
 data/
+diagnostics/*
+!diagnostics/.gitkeep
 *.log*
 stub_webview.log
+run.lock*
+.setup_locked*
+.add_account*
+.provision_verify*
+*.tmp
+*.bak*
 
 # ─── Python ───
 __pycache__/

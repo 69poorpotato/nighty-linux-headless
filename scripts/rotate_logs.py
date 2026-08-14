@@ -1,12 +1,13 @@
 #!/usr/bin/env python3
 """log rotation utility for nighty-linux-headless.
 
-Rotates log files when they exceed a configurable size threshold, keeping a
-bounded number of rotated backups (e.g., backend.log -> backend.log.1 -> ...).
+Rotates log files in diagnostics/ and NIGHTY_HOME when they exceed a configurable
+size threshold, keeping a bounded number of rotated backups.
 """
 
 from __future__ import annotations
 
+import glob
 import os
 from pathlib import Path
 import sys
@@ -64,10 +65,25 @@ def rotate_log_file(log_path: Path, max_bytes: int = 10 * 1024 * 1024, max_backu
             return False
 
 
+def find_appdata_logs() -> list[Path]:
+    logs = []
+    prefix = os.environ.get("WINEPREFIX") or os.path.expanduser("~/.local/share/nighty/prefix")
+    pattern = os.path.join(prefix, "drive_c", "users", "*", "AppData", "Roaming", "Nighty Selfbot", "nighty.log")
+    for match in glob.glob(pattern):
+        p = Path(match)
+        if p.is_file():
+            logs.append(p)
+    return logs
+
+
 def main() -> int:
     max_mb = float(os.environ.get("MAX_LOG_MB", "10"))
     max_bytes = int(max_mb * 1024 * 1024)
     max_backups = int(os.environ.get("MAX_LOG_BACKUPS", "3"))
+
+    here_dir = Path(__file__).resolve().parents[1]
+    diag_dir_env = os.environ.get("NIGHTY_DIAG_DIR")
+    diag_path = Path(diag_dir_env) if diag_dir_env else (here_dir / "diagnostics")
 
     nighty_home = os.environ.get("NIGHTY_HOME") or os.path.expanduser("~/.local/share/nighty")
     home_path = Path(nighty_home)
@@ -75,8 +91,19 @@ def main() -> int:
     if len(sys.argv) > 1:
         targets = [Path(p) for p in sys.argv[1:]]
     else:
-        log_names = ["backend.log", "bridge.log", "guard.log", "xvfb.log"]
-        targets = [home_path / name for name in log_names]
+        log_names = ["backend.log", "bridge.log", "guard.log", "xvfb.log", "stub_webview.log", "nighty.log"]
+        targets = []
+        for name in log_names:
+            p_diag = diag_path / name
+            if p_diag.is_file():
+                targets.append(p_diag)
+            p_home = home_path / name
+            if p_home.is_file() and p_home != p_diag:
+                targets.append(p_home)
+        # Also check AppData nighty.log
+        for app_log in find_appdata_logs():
+            if app_log not in targets:
+                targets.append(app_log)
 
     rotated_any = False
     for target in targets:

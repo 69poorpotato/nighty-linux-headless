@@ -729,8 +729,19 @@ def save_license(key):
 
 
 def _backend_log_path():
+    diag = os.environ.get("NIGHTY_DIAG_DIR")
+    if diag:
+        p = os.path.join(diag, "backend.log")
+        if os.path.exists(p):
+            return p
     nh = os.environ.get("NIGHTY_HOME")
-    return os.path.join(nh, "backend.log") if nh else None
+    if nh:
+        p = os.path.join(nh, "backend.log")
+        if os.path.exists(p):
+            return p
+    here = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    fallback = os.path.join(here, "diagnostics", "backend.log")
+    return fallback if os.path.exists(fallback) else (os.path.join(nh, "backend.log") if nh else None)
 
 
 def _read_backend_log_tail(path, max_bytes=None):
