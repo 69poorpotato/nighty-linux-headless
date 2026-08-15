@@ -31,10 +31,10 @@ fi
 print_success "Nighty.exe found!"
 
 mkdir -p docker-secrets data diagnostics
-
 # Clean up any bad directories Docker previously auto-created on the host
 if [ -d "Nighty_stub.exe" ]; then
-  rm -rf "Nighty_stub.exe"
+  print_step "Fixing directory created by Docker for Nighty_stub.exe..."
+  rm -rf Nighty_stub.exe 2>/dev/null || sudo rm -rf Nighty_stub.exe 2>/dev/null || true
 fi
 # Clean up any empty files created by older versions of this script
 if [ ! -s "Nighty_stub.exe" ] && [ -f "Nighty_stub.exe" ]; then
