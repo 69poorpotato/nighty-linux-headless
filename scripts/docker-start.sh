@@ -31,6 +31,10 @@ fi
 print_success "Nighty.exe found!"
 
 mkdir -p docker-secrets data diagnostics
+if [ -d "Nighty_stub.exe" ]; then
+  print_step "Fixing directory created by Docker for Nighty_stub.exe..."
+  rm -rf Nighty_stub.exe 2>/dev/null || sudo rm -rf Nighty_stub.exe 2>/dev/null || true
+fi
 [ -f "Nighty_stub.exe" ] || touch Nighty_stub.exe
 chmod 700 docker-secrets
 

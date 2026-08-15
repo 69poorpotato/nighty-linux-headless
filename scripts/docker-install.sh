@@ -81,6 +81,9 @@ printf '\n'
 # arguments. Newlines are intentionally unsupported by Docker secret files.
 umask 077
 mkdir -p docker-secrets data diagnostics
+if [ -d "Nighty_stub.exe" ]; then
+  rm -rf Nighty_stub.exe 2>/dev/null || sudo rm -rf Nighty_stub.exe 2>/dev/null || true
+fi
 [ -f "Nighty_stub.exe" ] || touch Nighty_stub.exe
 printf '%s\n' "$WEBUI_USER" > docker-secrets/webui_username
 printf '%s\n' "$WEBUI_PASS" > docker-secrets/webui_password
